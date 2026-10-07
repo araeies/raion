@@ -1,0 +1,12 @@
+# Raion workspace for the example payments application.
+apiVersion: raion/v1alpha1
+kind: Workspace
+metadata:
+  name: payments-demo
+  description: Example Node.js services connected to the Raion observability stack
+spec:
+  # Level 2: metrics, logs, distributed tracing and logs linked to traces.
+  level: 2
+  environment: production
+  teams:
+    - name: payments

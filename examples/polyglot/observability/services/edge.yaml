@@ -1,0 +1,18 @@
+apiVersion: raion/v1alpha1
+kind: Service
+metadata:
+  name: edge
+spec:
+  description: Nginx in front of the shop
+  team: shop
+  type: web
+  runtime: { type: compose }
+  # Access and error logs: Nginx writes them to stdout, Docker forwards them to Raion.
+  containerLogs: true
+  integrations:
+    - name: nginx
+      params:
+        # stub_status listens on a port that is not published (see edge/nginx.conf).
+        endpoint: http://edge:8081/nginx_status
+  dependencies:
+    - service: catalog-api

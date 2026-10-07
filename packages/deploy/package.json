@@ -1,0 +1,21 @@
+{
+  "name": "@raion/deploy",
+  "version": "0.1.0",
+  "description": "Raion deployment engine: releases, plans, deployment targets (Docker Compose).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@raion/core": "workspace:*",
+    "@raion/schema": "workspace:*",
+    "yaml": "2.9.1"
+  }
+}

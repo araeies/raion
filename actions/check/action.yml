@@ -1,0 +1,128 @@
+# Raion check: review observability changes in pull requests.
+#
+#   - uses: actions/checkout@<sha>
+#     with: { fetch-depth: 0, persist-credentials: false }   # the base commit, no stored token
+#   - uses: <owner>/raion/actions/check@<sha>                # pin to a commit
+#     with:
+#       workspace: observability
+#
+# Validates the workspace, shows what a pull request changes in the generated configuration
+# (components that restart, privileged or data-affecting changes, file diffs) and runs the
+# advisor. Results go to the job summary and, when the token may write, a pull-request comment
+# that is updated on every push.
+#
+# Security: inputs reach scripts only through environment variables (never ${{ }} inside a
+# script), and the action never needs pull_request_target. On pull requests from forks the
+# token is read-only, so the action writes the job summary and skips the comment.
+name: Raion check
+description: Validate a Raion workspace, show what a pull request changes, and run the advisor.
+inputs:
+  workspace:
+    description: Workspace directory, relative to the repository root.
+    default: observability
+  deep:
+    description: Also check generated files with each component's own validator (needs Docker).
+    default: 'false'
+  fail-on:
+    description: Fail when the advisor reports a finding this severe (critical, warning or info). Empty never fails.
+    default: ''
+  comment:
+    description: Post the result as a pull-request comment (updated on each push).
+    default: 'true'
+  github-token:
+    description: Token for the comment. Needs pull-requests write permission.
+    default: ${{ github.token }}
+outputs:
+  changed:
+    description: '"true" when the pull request changes the generated configuration.'
+    value: ${{ steps.diff.outputs.changed }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: 24
+
+    - name: Build Raion
+      shell: bash
+      working-directory: ${{ github.action_path }}/../..
+      run: |
+        corepack enable
+        pnpm install --frozen-lockfile
+        pnpm run build
+        echo "RAION_CLI=$PWD/apps/cli/dist/index.js" >> "$GITHUB_ENV"
+
+    - name: Validate
+      shell: bash
+      env:
+        WORKSPACE: ${{ inputs.workspace }}
+        DEEP: ${{ inputs.deep }}
+      run: |
+        # .raion/ holds secrets and local state; it must never be in Git.
+        tracked="$(git ls-files -- "$WORKSPACE/.raion")"
+        if [ -n "$tracked" ]; then
+          echo "::error::$WORKSPACE/.raion/ is committed. It contains secrets: remove it from Git (git rm -r --cached $WORKSPACE/.raion), add .raion/ to .gitignore, and rotate the secrets it held."
+          exit 1
+        fi
+        node "$RAION_CLI" validate "$WORKSPACE"
+        if [ "$DEEP" = "true" ]; then node "$RAION_CLI" validate "$WORKSPACE" --deep; fi
+
+    - name: Compare with the base branch
+      id: diff
+      shell: bash
+      env:
+        WORKSPACE: ${{ inputs.workspace }}
+        EVENT: ${{ github.event_name }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        report="$RUNNER_TEMP/raion-report.md"
+        if [ "$EVENT" = "pull_request" ] && [ -n "$BASE_SHA" ]; then
+          base="$RUNNER_TEMP/raion-base"
+          # With "fetch-depth: 0" the base commit is already here; otherwise fetch it (this
+          # needs credentials on private repositories).
+          if ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          fi
+          git worktree add --detach "$base" "$BASE_SHA"
+          node "$RAION_CLI" diff "$base/$WORKSPACE" "$WORKSPACE" --format markdown --advise > "$report"
+          node "$RAION_CLI" diff "$base/$WORKSPACE" "$WORKSPACE" --format json \
+            | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log('changed='+!JSON.parse(s).plan.noChanges))" \
+            >> "$GITHUB_OUTPUT"
+          git worktree remove --force "$base"
+        else
+          # Not a pull request: compare with nothing, so the summary lists the full configuration.
+          node "$RAION_CLI" diff "$RUNNER_TEMP/raion-no-base" "$WORKSPACE" --format markdown --advise > "$report"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+        fi
+        cat "$report" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Comment on the pull request
+      if: github.event_name == 'pull_request' && inputs.comment == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        PR: ${{ github.event.pull_request.number }}
+      run: |
+        if [ "$HEAD_REPO" != "$REPO" ]; then
+          echo "Pull request from a fork: the token cannot comment; see the job summary."
+          exit 0
+        fi
+        marker='<!-- raion-check -->'
+        body="$(printf '%s\n%s' "$marker" "$(cat "$RUNNER_TEMP/raion-report.md")")"
+        existing="$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+          --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)"
+        if [ -n "$existing" ]; then
+          gh api --method PATCH "repos/$REPO/issues/comments/$existing" -f body="$body" > /dev/null
+        else
+          gh api --method POST "repos/$REPO/issues/$PR/comments" -f body="$body" > /dev/null
+        fi
+
+    - name: Advisor
+      if: inputs.fail-on != ''
+      shell: bash
+      env:
+        WORKSPACE: ${{ inputs.workspace }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: node "$RAION_CLI" advise "$WORKSPACE" --offline --fail-on "$FAIL_ON"

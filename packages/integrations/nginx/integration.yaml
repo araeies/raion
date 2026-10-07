@@ -1,0 +1,36 @@
+# Raion integration: Nginx, monitored by the OpenTelemetry Collector.
+#
+# Integrations are data only. Raion reads this file; it never executes anything from it.
+# The collector configuration is built by Raion from the parameters below.
+apiVersion: raion/v1alpha1
+kind: Integration
+metadata:
+  name: nginx
+  version: 0.1.0
+spec:
+  kind: edge
+  displayName: Nginx
+  description: >-
+    Requests per second and connections (active, reading, writing, waiting), read by the
+    collector from Nginx's stub_status page.
+
+  parameters:
+    endpoint:
+      type: string
+      format: url
+      required: true
+      description: The stub_status URL as the collector reaches it, e.g. "http://edge:8080/nginx_status".
+
+  requirements:
+    - kind: setup
+      description: >-
+        Enable stub_status on a location that only the observability network can reach,
+        for example: location = /nginx_status { stub_status; }
+
+  collector:
+    receiver: nginx
+
+  capabilities:
+    - id: proxy.nginx
+
+  docs: README.md

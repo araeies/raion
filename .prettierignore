@@ -1,0 +1,9 @@
+node_modules
+dist
+coverage
+pnpm-lock.yaml
+packages/schema/json
+LICENSE
+# Fixtures are intentionally hand-formatted (some are deliberately invalid)
+examples/workspaces/invalid
+packages/core/test/fixtures

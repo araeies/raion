@@ -1,0 +1,11 @@
+# Who must review changes to observability. Copy to .github/CODEOWNERS in your repository.
+
+# Every change to the workspace.
+/observability/                         @example/sre
+
+# Integration packages set environment variables of instrumented services: review them like code.
+/observability/integrations/            @example/platform-security
+/observability/integrations.lock.yaml   @example/platform-security
+
+# Notification routes and receivers.
+/observability/raion.yaml               @example/sre @example/platform-security

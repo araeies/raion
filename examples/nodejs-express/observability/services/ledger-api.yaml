@@ -1,0 +1,16 @@
+apiVersion: raion/v1alpha1
+kind: Service
+metadata:
+  name: ledger-api
+spec:
+  description: Keeps account balances
+  team: payments
+  type: api
+  language: nodejs
+  runtime:
+    type: compose
+  integrations:
+    # Explicit form, equivalent to the automatic choice, showing how to set parameters.
+    - name: nodejs
+      params:
+        esmHook: true

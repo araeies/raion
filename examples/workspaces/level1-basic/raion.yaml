@@ -1,0 +1,12 @@
+# Smallest useful workspace: one Node.js API in a single file, level 1 (basic).
+apiVersion: raion/v1alpha1
+kind: Workspace
+metadata:
+  name: hello
+spec:
+  level: 1
+  services:
+    - name: hello-api
+      type: api
+      language: nodejs
+      runtime: { type: compose }

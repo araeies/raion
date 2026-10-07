@@ -1,0 +1,57 @@
+# Raion integration: PostgreSQL, monitored by the OpenTelemetry Collector.
+#
+# Integrations are data only. Raion reads this file; it never executes anything from it.
+# The collector configuration is built by Raion from the parameters below.
+apiVersion: raion/v1alpha1
+kind: Integration
+metadata:
+  name: postgresql
+  version: 0.1.0
+spec:
+  kind: database
+  displayName: PostgreSQL
+  description: >-
+    Connections, transactions, cache hit ratio, deadlocks and database size for each
+    database, read by the collector with a read-only monitoring user. No change to the
+    applications that use the database.
+
+  parameters:
+    endpoint:
+      type: string
+      format: hostPort
+      required: true
+      description: Where the collector reaches PostgreSQL, e.g. "orders-db:5432".
+    username:
+      type: string
+      format: identifier
+      default: raion_monitor
+      description: A monitoring user with the pg_monitor role (read-only statistics).
+    password:
+      type: secret
+      required: true
+      description: The monitoring user's password, as ${secret:NAME}.
+    tls:
+      type: boolean
+      default: false
+      description: Connect with TLS and verify the server certificate.
+    tableMetrics:
+      type: boolean
+      default: false
+      description: >-
+        Also collect per-table and per-index metrics. Their number grows with the schema,
+        so they are off by default.
+
+  requirements:
+    - kind: setup
+      description: >-
+        Create a monitoring user that can read statistics but no data:
+        CREATE USER raion_monitor WITH PASSWORD '...'; GRANT pg_monitor TO raion_monitor;
+        Then store the password with "raion secrets set NAME".
+
+  collector:
+    receiver: postgresql
+
+  capabilities:
+    - id: database.postgresql
+
+  docs: README.md

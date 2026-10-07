@@ -1,0 +1,21 @@
+# A split ("GitOps") workspace at level 3: services and SLOs live in their own files.
+apiVersion: raion/v1alpha1
+kind: Workspace
+metadata:
+  name: acme
+  description: Acme payments platform
+spec:
+  level: 3
+  environment: production
+  infrastructure:
+    host: true
+    containers: false
+  notifications:
+    receivers:
+      - name: payments-slack
+        type: slack
+        webhookUrl: ${secret:PAYMENTS_SLACK_WEBHOOK}
+  teams:
+    - name: payments
+      route: payments-slack
+    - name: platform

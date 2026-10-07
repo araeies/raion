@@ -1,0 +1,10 @@
+packages:
+  - packages/*
+  - apps/*
+
+# Supply-chain hardening: do not install versions published less than 24h ago
+# (gives the registry time to pull compromised releases).
+minimumReleaseAge: 1440
+
+# Dependency lifecycle scripts are blocked by default. Allow-list explicitly and justify each entry.
+onlyBuiltDependencies: []

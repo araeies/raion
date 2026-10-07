@@ -1,0 +1,9 @@
+apiVersion: raion/v1alpha1
+kind: Service
+metadata:
+  name: ledger-api
+spec:
+  team: payments
+  type: api
+  language: nodejs
+  runtime: { type: compose }

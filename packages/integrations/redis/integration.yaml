@@ -1,0 +1,47 @@
+# Raion integration: Redis, monitored by the OpenTelemetry Collector.
+#
+# Integrations are data only. Raion reads this file; it never executes anything from it.
+# The collector configuration is built by Raion from the parameters below.
+apiVersion: raion/v1alpha1
+kind: Integration
+metadata:
+  name: redis
+  version: 0.1.0
+spec:
+  kind: database
+  displayName: Redis
+  description: >-
+    Clients, commands per second, cache hit ratio, memory, evictions and rejected
+    connections, read by the collector with Redis's INFO command.
+
+  parameters:
+    endpoint:
+      type: string
+      format: hostPort
+      required: true
+      description: Where the collector reaches Redis, e.g. "cache:6379".
+    username:
+      type: string
+      format: identifier
+      description: ACL user (Redis 6+), if Redis requires one.
+    password:
+      type: secret
+      description: The password, as ${secret:NAME}, if Redis requires one.
+    tls:
+      type: boolean
+      default: false
+      description: Connect with TLS and verify the server certificate.
+
+  requirements:
+    - kind: setup
+      description: >-
+        If Redis uses ACLs, a user that may run INFO is enough:
+        ACL SETUSER raion_monitor on >password +info +ping.
+
+  collector:
+    receiver: redis
+
+  capabilities:
+    - id: cache.redis
+
+  docs: README.md

@@ -1,0 +1,37 @@
+# Deploy merged changes. Runs on a self-hosted runner on the machine that hosts the stack,
+# with Raion installed; "production" is a GitHub environment that requires an approval.
+name: Observability (deploy)
+
+on:
+  push:
+    branches: [main]
+    paths: ['observability/**']
+
+permissions:
+  contents: read
+
+env:
+  # Releases, secrets and the user database live on the runner, outside the checkout, which
+  # actions/checkout cleans on every run. Create it once, owned by the runner's user (0700).
+  RAION_STATE_DIR: /srv/raion/shop
+
+concurrency:
+  group: observability-deploy # one deployment at a time; Raion also locks the stack
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, raion]
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Plan
+        run: raion plan observability
+      - name: Apply
+        # No --allow-privileged or --allow-data-changes here: such changes stop the deployment
+        # and need a person to apply them deliberately.
+        run: raion apply observability --yes
+      - name: Verify
+        run: raion verify observability

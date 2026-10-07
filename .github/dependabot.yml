@@ -1,0 +1,45 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dev-tooling:
+        dependency-type: development
+    open-pull-requests-limit: 10
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # Example applications: their dependencies are tested by the end-to-end jobs.
+  - package-ecosystem: npm
+    directory: /examples/nodejs-express
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /examples/polyglot/catalog-api
+    schedule:
+      interval: weekly
+    groups:
+      # Instrumentation versions must move together with the SDK.
+      opentelemetry:
+        patterns: ['opentelemetry-*']
+  - package-ecosystem: gomod
+    directory: /examples/polyglot/pricing-api
+    schedule:
+      interval: weekly
+    groups:
+      opentelemetry:
+        patterns: ['go.opentelemetry.io/*']
+  - package-ecosystem: docker
+    directories:
+      - /examples/nodejs-express
+      - /examples/polyglot/catalog-api
+      - /examples/polyglot/pricing-api
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker-compose
+    directory: /examples/polyglot
+    schedule:
+      interval: weekly

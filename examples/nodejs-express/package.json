@@ -1,0 +1,21 @@
+{
+  "name": "raion-example-payments",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Example Node.js services for Raion: a payments API that calls a ledger API.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "loadgen": "node src/loadgen.js"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/auto-instrumentations-node": "0.80.0",
+    "express": "5.2.1",
+    "pino": "10.4.0"
+  }
+}

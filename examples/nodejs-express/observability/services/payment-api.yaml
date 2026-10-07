@@ -1,0 +1,16 @@
+apiVersion: raion/v1alpha1
+kind: Service
+metadata:
+  name: payment-api
+spec:
+  description: Takes payments and records them in the ledger
+  team: payments
+  tier: critical
+  type: api
+  # The nodejs integration is chosen automatically from the language.
+  language: nodejs
+  runtime:
+    type: compose
+    composeService: payment-api
+  dependencies:
+    - service: ledger-api

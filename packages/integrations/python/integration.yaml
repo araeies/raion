@@ -1,0 +1,65 @@
+# Raion integration: Python applications, instrumented with OpenTelemetry.
+#
+# Integrations are data only. Raion reads this file; it never executes anything from it.
+# ${placeholders} are substituted into string values after the file has been parsed.
+apiVersion: raion/v1alpha1
+kind: Integration
+metadata:
+  name: python
+  version: 0.1.0
+spec:
+  kind: application
+  displayName: Python (OpenTelemetry)
+  description: >-
+    Zero-code OpenTelemetry instrumentation for Python: HTTP request metrics (Flask, Django,
+    FastAPI and more), distributed traces across services and into databases, and logs from
+    the standard logging module linked to traces. Configured through environment variables;
+    the application is started through "opentelemetry-instrument".
+  languages: [python]
+
+  requirements:
+    - kind: packages
+      manager: pip
+      packages: ['opentelemetry-distro', 'opentelemetry-exporter-otlp']
+      description: >-
+        Add these to your application's requirements, then add the instrumentation for the
+        libraries you use: "opentelemetry-bootstrap -a requirements" prints them (for example
+        opentelemetry-instrumentation-flask). Pin the versions you test with.
+    - kind: command
+      description: >-
+        Start the application through opentelemetry-instrument, for example
+        "opentelemetry-instrument python app.py". It loads the SDK and instruments the
+        libraries before your code runs. With a pre-forking server (gunicorn, uWSGI), see the
+        integration guide.
+
+  instrumentation:
+    env:
+      OTEL_SERVICE_NAME: ${service.name}
+      OTEL_RESOURCE_ATTRIBUTES: ${resource.attributes}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${otlp.httpEndpoint}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: ${signals.traces}
+      OTEL_METRICS_EXPORTER: ${signals.metrics}
+      OTEL_LOGS_EXPORTER: ${signals.logs}
+      OTEL_METRIC_EXPORT_INTERVAL: '15000'
+      # Stable HTTP semantic conventions: http.server.request.duration in seconds.
+      OTEL_SEMCONV_STABILITY_OPT_IN: http
+      # Sends records of the standard logging module, with the trace and span of the request.
+      OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: 'true'
+
+  capabilities:
+    - id: http.server
+      metrics:
+        requestDuration:
+          name: http_server_request_duration_seconds
+          type: histogram
+          unit: seconds
+          labels:
+            method: http_request_method
+            status: http_response_status_code
+            route: http_route
+          buckets: [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10]
+    - id: logs.otlp
+    - id: traces.otlp
+
+  docs: README.md

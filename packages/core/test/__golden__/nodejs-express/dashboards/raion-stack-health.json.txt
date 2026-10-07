@@ -1,0 +1,628 @@
+{
+  "uid": "raion-stack-health",
+  "title": "Raion · Observability stack health",
+  "description": "Is the monitoring itself working? Collector, storage and alerting health.",
+  "tags": [
+    "raion"
+  ],
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": [
+        "raion"
+      ],
+      "asDropdown": true,
+      "title": "Raion dashboards",
+      "includeVars": false,
+      "keepTime": true
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Pipeline",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "text",
+      "title": "",
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 24,
+        "h": 3
+      },
+      "raion": {
+        "expect": "optional"
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Is the monitoring itself working? Every component should be **up**, the collector should accept everything it receives and deliver everything it accepts, and queues should stay far below capacity."
+      }
+    },
+    {
+      "id": 3,
+      "type": "bargauge",
+      "title": "Components up",
+      "description": "1 when Prometheus can scrape the component, 0 when it cannot.",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 8,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (job) (up)",
+          "legendFormat": "{{job}}",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Telemetry received by the collector",
+      "description": "Items per second accepted from applications, per signal.",
+      "gridPos": {
+        "x": 8,
+        "y": 4,
+        "w": 16,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(otelcol_receiver_accepted_spans[$__rate_interval]))",
+          "legendFormat": "spans",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(otelcol_receiver_accepted_metric_points[$__rate_interval]))",
+          "legendFormat": "metric points",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(otelcol_receiver_accepted_log_records[$__rate_interval]))",
+          "legendFormat": "log records",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Refused or failed telemetry",
+      "description": "Items the collector refused (overloaded) or could not deliver to storage. Should stay at 0.",
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(rate(otelcol_receiver_refused_spans[$__rate_interval])) or vector(0)) + (sum(rate(otelcol_receiver_failed_spans[$__rate_interval])) or vector(0)) + (sum(rate(otelcol_receiver_refused_metric_points[$__rate_interval])) or vector(0)) + (sum(rate(otelcol_receiver_failed_metric_points[$__rate_interval])) or vector(0)) + (sum(rate(otelcol_receiver_refused_log_records[$__rate_interval])) or vector(0)) + (sum(rate(otelcol_receiver_failed_log_records[$__rate_interval])) or vector(0))",
+          "legendFormat": "refused by the collector",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "expr": "(sum(rate(otelcol_exporter_send_failed_spans[$__rate_interval])) or vector(0)) + (sum(rate(otelcol_exporter_send_failed_metric_points[$__rate_interval])) or vector(0)) + (sum(rate(otelcol_exporter_send_failed_log_records[$__rate_interval])) or vector(0))",
+          "legendFormat": "not delivered to storage",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Export queue usage",
+      "description": "How full the collector's outgoing queues are. Near 100% means storage cannot keep up.",
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (exporter) (otelcol_exporter_queue_size / otelcol_exporter_queue_capacity)",
+          "legendFormat": "{{exporter}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Metric series stored",
+      "description": "Active time series in Prometheus. Sudden jumps usually mean a label with too many values (high cardinality).",
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "prometheus_tsdb_head_series",
+          "legendFormat": "series",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Log lines stored",
+      "description": "Log lines per second received by Loki.",
+      "gridPos": {
+        "x": 8,
+        "y": 21,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(loki_distributor_lines_received_total[$__rate_interval]))",
+          "legendFormat": "lines",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Spans stored",
+      "description": "Spans per second received by Tempo.",
+      "gridPos": {
+        "x": 16,
+        "y": 21,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(tempo_distributor_spans_received_total[$__rate_interval]))",
+          "legendFormat": "spans",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Rule evaluation failures",
+      "description": "Recording and alerting rules Prometheus failed to evaluate. Should stay at 0.",
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(prometheus_rule_evaluation_failures_total[$__rate_interval])) or vector(0)",
+          "legendFormat": "failures",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Failed alert notifications",
+      "description": "Notifications Alertmanager could not deliver. Should stay at 0.",
+      "gridPos": {
+        "x": 12,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(alertmanager_notifications_failed_total[$__rate_interval])) or vector(0)",
+          "legendFormat": "failed",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ]
+}

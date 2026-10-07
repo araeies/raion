@@ -1,0 +1,13 @@
+apiVersion: raion/v1alpha1
+kind: Service
+metadata:
+  name: pricing-cache
+spec:
+  description: Redis cache of computed prices
+  team: shop
+  type: database
+  runtime: { type: compose }
+  integrations:
+    - name: redis
+      params:
+        endpoint: pricing-cache:6379

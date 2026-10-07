@@ -1,0 +1,83 @@
+# Raion example: a small shop in three languages and two databases.
+#
+#   loadgen ──► edge (Nginx) ──► catalog-api (Python) ──► pricing-api (Go) ──► pricing-cache (Redis)
+#                                       └──► catalog-db (PostgreSQL)
+#
+# Passwords come from the environment (see README.md); nothing secret is in this file.
+name: raion-example-polyglot
+
+services:
+  edge:
+    image: nginxinc/nginx-unprivileged:1.30.4-alpine@sha256:adf5042a17f4ecdd200c595fa9ffd1be37efb18f89a830bd1a00e4ab4d59d42c
+    volumes: ['./edge/nginx.conf:/etc/nginx/conf.d/default.conf:ro']
+    ports: ['127.0.0.1:8088:8080']
+    depends_on:
+      catalog-api: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:8081/nginx_status']
+      interval: 5s
+      retries: 20
+
+  catalog-api:
+    build: ./catalog-api
+    image: raion-example-catalog-api:local
+    environment:
+      CATALOG_DSN: host=catalog-db dbname=catalog user=catalog password=${CATALOG_DB_PASSWORD:?set CATALOG_DB_PASSWORD}
+      PRICING_URL: http://pricing-api:8080
+    depends_on:
+      catalog-db: { condition: service_healthy }
+      pricing-api: { condition: service_healthy }
+    read_only: true
+    tmpfs: ['/tmp']
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz')",
+        ]
+      interval: 5s
+      retries: 20
+
+  pricing-api:
+    build: ./pricing-api
+    image: raion-example-pricing-api:local
+    environment:
+      REDIS_ADDR: pricing-cache:6379
+    depends_on:
+      pricing-cache: { condition: service_healthy }
+    read_only: true
+    healthcheck:
+      test: ['CMD', '/pricing-api', '-healthcheck']
+      interval: 5s
+      retries: 20
+
+  catalog-db:
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    environment:
+      POSTGRES_PASSWORD: ${CATALOG_DB_PASSWORD:?set CATALOG_DB_PASSWORD}
+      POSTGRES_USER: catalog
+      POSTGRES_DB: catalog
+      # Read by catalog-db/init.sh to create the read-only monitoring user.
+      MONITOR_PASSWORD: ${CATALOG_DB_MONITOR_PASSWORD:?set CATALOG_DB_MONITOR_PASSWORD}
+    volumes: ['./catalog-db/init.sh:/docker-entrypoint-initdb.d/init.sh:ro']
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'catalog', '-d', 'catalog']
+      interval: 5s
+      retries: 20
+
+  pricing-cache:
+    image: redis:8-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
+    command: ['redis-server', '--maxmemory', '64mb', '--maxmemory-policy', 'allkeys-lru']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      retries: 20
+
+  loadgen:
+    image: python:3.13-slim@sha256:bf44cdfcb76cd3b41e879bc058fc37ec5872002ccfde7fcb765e218cde0cd79c
+    command: ['python', '/loadgen.py']
+    volumes: ['./loadgen/loadgen.py:/loadgen.py:ro']
+    depends_on:
+      edge: { condition: service_healthy }

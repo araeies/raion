@@ -1,0 +1,86 @@
+# Raion integration: Node.js applications, instrumented with OpenTelemetry.
+#
+# Integrations are data only. Raion reads this file; it never executes anything from it.
+# ${placeholders} are substituted into string values after the file has been parsed.
+apiVersion: raion/v1alpha1
+kind: Integration
+metadata:
+  name: nodejs
+  version: 0.1.0
+spec:
+  kind: application
+  displayName: Node.js (OpenTelemetry)
+  description: >-
+    Zero-code OpenTelemetry instrumentation for Node.js: HTTP request metrics, distributed
+    traces across services, and application logs (pino, winston, bunyan) linked to traces.
+    No code changes: the application is configured through environment variables.
+  languages: [nodejs]
+
+  parameters:
+    esmHook:
+      type: boolean
+      default: true
+      description: >-
+        Also instrument ECMAScript modules (import/export syntax) by registering the
+        OpenTelemetry module hook. Needed for "type": "module" apps; harmless for CommonJS.
+        Requires @opentelemetry/instrumentation to be resolvable from the app (true with npm
+        and yarn; with pnpm, add it as a direct dependency).
+
+  requirements:
+    - kind: packages
+      manager: npm
+      packages: ['@opentelemetry/api', '@opentelemetry/auto-instrumentations-node']
+      description: >-
+        Add these to your application's dependencies (for example
+        "npm install @opentelemetry/api @opentelemetry/auto-instrumentations-node") and
+        rebuild it. They contain the OpenTelemetry SDK and instrumentation for HTTP, Express,
+        Fastify, Koa, databases, Redis, pino, winston and more.
+
+  instrumentation:
+    env:
+      NODE_OPTIONS:
+        cases:
+          - when: { param: esmHook, equals: true }
+            value: >-
+              --import=data:text/javascript,import{register}from'node:module';import{pathToFileURL}from'node:url';register('@opentelemetry/instrumentation/hook.mjs',pathToFileURL('./'));
+              --require=@opentelemetry/auto-instrumentations-node/register
+          - value: --require=@opentelemetry/auto-instrumentations-node/register
+      OTEL_SERVICE_NAME: ${service.name}
+      OTEL_RESOURCE_ATTRIBUTES: ${resource.attributes}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${otlp.httpEndpoint}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: ${signals.traces}
+      OTEL_METRICS_EXPORTER: ${signals.metrics}
+      OTEL_LOGS_EXPORTER: ${signals.logs}
+      OTEL_METRIC_EXPORT_INTERVAL: '15000'
+      # Stable HTTP semantic conventions: http.server.request.duration in seconds.
+      OTEL_SEMCONV_STABILITY_OPT_IN: http
+      OTEL_NODE_RESOURCE_DETECTORS: env,host,os,process,serviceinstance
+
+  capabilities:
+    - id: http.server
+      metrics:
+        requestDuration:
+          name: http_server_request_duration_seconds
+          type: histogram
+          unit: seconds
+          labels:
+            method: http_request_method
+            status: http_response_status_code
+            route: http_route
+          buckets: [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10]
+    - id: http.client
+      metrics:
+        requestDuration:
+          name: http_client_request_duration_seconds
+          type: histogram
+          unit: seconds
+          labels:
+            method: http_request_method
+            status: http_response_status_code
+          buckets: [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10]
+    - id: logs.otlp
+    - id: traces.otlp
+    - id: runtime.nodejs
+
+  docs: README.md

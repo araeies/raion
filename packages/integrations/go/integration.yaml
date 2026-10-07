@@ -1,0 +1,67 @@
+# Raion integration: Go applications, instrumented with the OpenTelemetry SDK.
+#
+# Integrations are data only. Raion reads this file; it never executes anything from it.
+# ${placeholders} are substituted into string values after the file has been parsed.
+apiVersion: raion/v1alpha1
+kind: Integration
+metadata:
+  name: go
+  version: 0.1.0
+spec:
+  kind: application
+  displayName: Go (OpenTelemetry SDK)
+  description: >-
+    HTTP request metrics, distributed traces and log/trace correlation for Go services, using
+    the OpenTelemetry SDK with otelhttp and the slog bridge. Go compiles to machine code, so
+    there is no zero-code option without elevated privileges: a few lines at startup set up
+    the SDK, and Raion configures it through environment variables.
+  languages: [go]
+
+  requirements:
+    - kind: packages
+      manager: go
+      packages:
+        - go.opentelemetry.io/contrib/exporters/autoexport
+        - go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
+        - go.opentelemetry.io/contrib/bridges/otelslog
+        - go.opentelemetry.io/otel/sdk
+        - go.opentelemetry.io/otel/sdk/metric
+        - go.opentelemetry.io/otel/sdk/log
+      description: >-
+        Add the OpenTelemetry SDK, the exporters chosen from environment variables
+        (autoexport), the HTTP instrumentation and the slog bridge.
+    - kind: code
+      description: >-
+        At startup, create the tracer, meter and logger providers with autoexport; wrap your
+        HTTP handler with otelhttp.NewHandler (routes come from http.ServeMux patterns); log
+        with the otelslog logger and pass the request's context. The integration guide has a complete,
+        tested setup file to copy.
+
+  instrumentation:
+    env:
+      OTEL_SERVICE_NAME: ${service.name}
+      OTEL_RESOURCE_ATTRIBUTES: ${resource.attributes}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${otlp.httpEndpoint}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: ${signals.traces}
+      OTEL_METRICS_EXPORTER: ${signals.metrics}
+      OTEL_LOGS_EXPORTER: ${signals.logs}
+      OTEL_METRIC_EXPORT_INTERVAL: '15000'
+      OTEL_SEMCONV_STABILITY_OPT_IN: http
+
+  capabilities:
+    - id: http.server
+      metrics:
+        requestDuration:
+          name: http_server_request_duration_seconds
+          type: histogram
+          unit: seconds
+          labels:
+            method: http_request_method
+            status: http_response_status_code
+            route: http_route
+          buckets: [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10]
+    - id: logs.otlp
+    - id: traces.otlp
+
+  docs: README.md

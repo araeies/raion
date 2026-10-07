@@ -1,0 +1,159 @@
+{
+  "uid": "raion-traces",
+  "title": "Raion · Traces",
+  "description": "Slow and failed requests across all services.",
+  "tags": [
+    "raion"
+  ],
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": [
+        "raion"
+      ],
+      "asDropdown": true,
+      "title": "Raion dashboards",
+      "includeVars": false,
+      "keepTime": true
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Traces",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Failed requests",
+      "description": "Recent traces that ended in an error, in any service.",
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 12,
+        "h": 12
+      },
+      "datasource": {
+        "type": "tempo",
+        "uid": "raion-tempo"
+      },
+      "raion": {
+        "expect": "optional"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{status=error}",
+          "limit": 25,
+          "datasource": {
+            "type": "tempo",
+            "uid": "raion-tempo"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Slowest requests (over 1 s)",
+      "description": "Recent traces of requests that took longer than one second.",
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 12,
+        "h": 12
+      },
+      "datasource": {
+        "type": "tempo",
+        "uid": "raion-tempo"
+      },
+      "raion": {
+        "expect": "optional"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{kind=server && duration > 1s}",
+          "limit": 25,
+          "datasource": {
+            "type": "tempo",
+            "uid": "raion-tempo"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Recent requests",
+      "description": "The most recent traces.",
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "tempo",
+        "uid": "raion-tempo"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{kind=server}",
+          "limit": 25,
+          "datasource": {
+            "type": "tempo",
+            "uid": "raion-tempo"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    }
+  ]
+}

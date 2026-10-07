@@ -1,0 +1,10 @@
+# Observability for the polyglot shop example: Nginx, Python, Go, PostgreSQL and Redis.
+apiVersion: raion/v1alpha1
+kind: Workspace
+metadata:
+  name: polyglot-shop
+  description: Shop example in three languages with two databases
+spec:
+  level: 2
+  teams:
+    - name: shop

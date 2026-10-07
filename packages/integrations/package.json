@@ -1,0 +1,19 @@
+{
+  "name": "@raion/integrations",
+  "version": "0.1.0",
+  "description": "First-party Raion integration packages (data only: manifests and documentation).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*/integration.yaml",
+    "*/*.md"
+  ]
+}

@@ -1,0 +1,25 @@
+# Review every change to the observability workspace before it is merged.
+name: Observability (pull request)
+
+on:
+  pull_request:
+    paths: ['observability/**']
+
+permissions:
+  contents: read
+  pull-requests: write # the check posts (and updates) one comment with what the change does
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the base commit, to compare with
+          persist-credentials: false
+      # Pin the action to a commit of the Raion repository, like any third-party action.
+      - uses: example-org/raion/actions/check@0000000000000000000000000000000000000000
+        with:
+          workspace: observability
+          deep: 'true' # check generated files with Prometheus', Alertmanager's… own validators
+          fail-on: warning # block merging while the advisor reports a warning or worse

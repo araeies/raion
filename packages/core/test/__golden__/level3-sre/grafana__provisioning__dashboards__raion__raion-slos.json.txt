@@ -1,0 +1,956 @@
+{
+  "uid": "raion-slos",
+  "title": "Raion · SLOs",
+  "description": "Service level objectives, error budgets and burn rates.",
+  "tags": [
+    "raion"
+  ],
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": [
+        "raion"
+      ],
+      "asDropdown": true,
+      "title": "Raion dashboards",
+      "includeVars": false,
+      "keepTime": true
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "About",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "text",
+      "title": "",
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 24,
+        "h": 3
+      },
+      "raion": {
+        "expect": "optional"
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "A **service level objective (SLO)** says how reliable a service must be, from its users' point of view, e.g. \"99.9% of requests succeed over 30 days\". The **error budget** is the failure that is allowed (here 0.1%): spend it on releases and experiments, protect it when it runs low. The **burn rate** says how fast it is being spent: 1 means exactly on budget, 14 means a month's budget is gone in about two days."
+      }
+    },
+    {
+      "id": 3,
+      "type": "bargauge",
+      "title": "Error budget left, per SLO",
+      "description": "Every SLO at a glance. Red: the objective is missed over its window.",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "raion_slo:error_budget_remaining:ratio",
+          "legendFormat": "{{service_name}} · {{slo}}",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 0.25
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "row",
+      "title": "payment-api · availability — 99.9% over 30d",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "SLI",
+      "description": "Share of good events over the last 30d. The objective is 99.9%.",
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "raion_slo:sli:ratio{service_name=\"payment-api\",slo=\"availability\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0.999
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Error budget left",
+      "description": "How much of the allowed 0.1% of failures over 30d is still unused. Below 0 the objective is missed.",
+      "gridPos": {
+        "x": 6,
+        "y": 9,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "raion_slo:error_budget_remaining:ratio{service_name=\"payment-api\",slo=\"availability\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 0.25
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Burn rate (1 h)",
+      "description": "How fast the error budget is being used, as a multiple of the sustainable pace. Above 1 the budget runs out before the window ends.",
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "raion_slo:error_ratio:rate1h{service_name=\"payment-api\",slo=\"availability\"} / 0.001",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 6
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Objective",
+      "description": "Payment requests that do not fail with a server error",
+      "gridPos": {
+        "x": 18,
+        "y": 9,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "raion_slo:objective:ratio{service_name=\"payment-api\",slo=\"availability\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Error budget left over time",
+      "description": "A falling line means failures are using the budget; a flat line means no failures.",
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "raion_slo:error_budget_remaining:ratio{service_name=\"payment-api\",slo=\"availability\"}",
+          "legendFormat": "availability (99.9% over 30d)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Burn rate",
+      "description": "Budget use as a multiple of the sustainable pace, over short and long windows. Raion pages when both a long and a short window burn fast.",
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "raion_slo:error_ratio:rate5m{service_name=\"payment-api\",slo=\"availability\"} / 0.001",
+          "legendFormat": "5m",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "expr": "raion_slo:error_ratio:rate1h{service_name=\"payment-api\",slo=\"availability\"} / 0.001",
+          "legendFormat": "1h",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        },
+        {
+          "refId": "C",
+          "expr": "raion_slo:error_ratio:rate6h{service_name=\"payment-api\",slo=\"availability\"} / 0.001",
+          "legendFormat": "6h",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        },
+        {
+          "refId": "D",
+          "expr": "raion_slo:error_ratio:rate1d{service_name=\"payment-api\",slo=\"availability\"} / 0.001",
+          "legendFormat": "1d",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "payment-api · latency — 99% over 30d",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "SLI",
+      "description": "Share of good events over the last 30d. The objective is 99%.",
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "raion_slo:sli:ratio{service_name=\"payment-api\",slo=\"latency\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0.99
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Error budget left",
+      "description": "How much of the allowed 1% of failures over 30d is still unused. Below 0 the objective is missed.",
+      "gridPos": {
+        "x": 6,
+        "y": 23,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "raion_slo:error_budget_remaining:ratio{service_name=\"payment-api\",slo=\"latency\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 0.25
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Burn rate (1 h)",
+      "description": "How fast the error budget is being used, as a multiple of the sustainable pace. Above 1 the budget runs out before the window ends.",
+      "gridPos": {
+        "x": 12,
+        "y": 23,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "raion_slo:error_ratio:rate1h{service_name=\"payment-api\",slo=\"latency\"} / 0.01",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 6
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Objective",
+      "description": "Payment requests served in under 500ms",
+      "gridPos": {
+        "x": 18,
+        "y": 23,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "raion_slo:objective:ratio{service_name=\"payment-api\",slo=\"latency\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Error budget left over time",
+      "description": "A falling line means failures are using the budget; a flat line means no failures.",
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "raion_slo:error_budget_remaining:ratio{service_name=\"payment-api\",slo=\"latency\"}",
+          "legendFormat": "latency (99% over 30d)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Burn rate",
+      "description": "Budget use as a multiple of the sustainable pace, over short and long windows. Raion pages when both a long and a short window burn fast.",
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "raion-prometheus"
+      },
+      "raion": {
+        "expect": "data"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "raion_slo:error_ratio:rate5m{service_name=\"payment-api\",slo=\"latency\"} / 0.01",
+          "legendFormat": "5m",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "expr": "raion_slo:error_ratio:rate1h{service_name=\"payment-api\",slo=\"latency\"} / 0.01",
+          "legendFormat": "1h",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        },
+        {
+          "refId": "C",
+          "expr": "raion_slo:error_ratio:rate6h{service_name=\"payment-api\",slo=\"latency\"} / 0.01",
+          "legendFormat": "6h",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        },
+        {
+          "refId": "D",
+          "expr": "raion_slo:error_ratio:rate1d{service_name=\"payment-api\",slo=\"latency\"} / 0.01",
+          "legendFormat": "1d",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "raion-prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ]
+}

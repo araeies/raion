@@ -1,0 +1,26 @@
+apiVersion: raion/v1alpha1
+kind: Service
+metadata:
+  name: payment-api
+spec:
+  team: payments
+  owner: payments-oncall@example.com
+  tier: critical
+  type: api
+  language: nodejs
+  repository: https://github.com/example/payment-api
+  runtime:
+    type: compose
+    composeService: payment-api
+  dependencies:
+    - service: ledger-api
+    - external: { name: postgres-main, kind: postgresql }
+  slos:
+    - name: availability
+      description: Payment requests that do not fail with a server error
+      sli: { type: availability }
+      target: 99.9%
+      window: 30d
+  runbooks:
+    - slo: availability
+      url: https://wiki.example.com/runbooks/payment-api-availability

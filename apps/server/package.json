@@ -1,0 +1,27 @@
+{
+  "name": "@raion/server",
+  "version": "0.1.0",
+  "description": "Raion control plane: API, authentication and web UI hosting.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@fastify/cookie": "11.1.2",
+    "@fastify/rate-limit": "11.2.0",
+    "@fastify/static": "10.1.5",
+    "@raion/core": "workspace:*",
+    "@raion/deploy": "workspace:*",
+    "@raion/schema": "workspace:*",
+    "fastify": "5.12.5",
+    "prom-client": "15.1.3",
+    "zod": "4.6.5"
+  }
+}

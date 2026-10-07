@@ -1,0 +1,15 @@
+apiVersion: raion/v1alpha1
+kind: Service
+metadata:
+  name: catalog-api
+spec:
+  description: Products and their prices
+  team: shop
+  tier: critical
+  type: api
+  # The python integration is chosen automatically from the language.
+  language: python
+  runtime: { type: compose }
+  dependencies:
+    - service: pricing-api
+    - service: catalog-db

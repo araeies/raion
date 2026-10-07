@@ -1,0 +1,20 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.vite/
+
+# Raion local state: secrets, releases, operational database. Never commit.
+.raion/
+
+# Generated JSON Schema is rebuilt by `pnpm build`
+packages/schema/json/
+
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+
+# Local Claude Code settings of whoever works on this clone
+.claude/settings.local.json

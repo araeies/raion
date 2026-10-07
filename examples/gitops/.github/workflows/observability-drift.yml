@@ -1,0 +1,29 @@
+# Detect changes made to the running stack behind Raion's back (hand-edited generated files,
+# containers stopped, removed or replaced). Exit code 3 fails the job, which notifies the team.
+name: Observability (drift)
+
+on:
+  schedule:
+    - cron: '17 * * * *' # hourly
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Releases, secrets and the user database live on the runner, outside the checkout, which
+  # actions/checkout cleans on every run. Create it once, owned by the runner's user (0700).
+  RAION_STATE_DIR: /srv/raion/shop
+
+jobs:
+  drift:
+    runs-on: [self-hosted, raion]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compare the running stack with the deployed release
+        run: raion drift observability
+      - name: Workspace changes not yet deployed
+        # Exit code 3: the main branch has changes that were not applied.
+        run: raion plan observability --no-tool-validation --detailed-exitcode

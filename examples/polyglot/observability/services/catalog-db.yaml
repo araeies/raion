@@ -1,0 +1,19 @@
+apiVersion: raion/v1alpha1
+kind: Service
+metadata:
+  name: catalog-db
+spec:
+  description: The catalog's PostgreSQL database
+  team: shop
+  tier: critical
+  type: database
+  runtime: { type: compose }
+  # Server log (slow queries, errors, connections) from the container's output.
+  containerLogs: true
+  integrations:
+    - name: postgresql
+      params:
+        endpoint: catalog-db:5432
+        # A read-only monitoring user (pg_monitor), created by catalog-db/init.sh.
+        username: raion_monitor
+        password: ${secret:CATALOG_DB_MONITOR_PASSWORD}

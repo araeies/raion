@@ -1,0 +1,20 @@
+{
+  "name": "@raion/cli",
+  "version": "0.1.0",
+  "description": "The raion command-line tool.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "raion": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@raion/core": "workspace:*",
+    "@raion/deploy": "workspace:*",
+    "@raion/schema": "workspace:*",
+    "@raion/server": "workspace:*",
+    "commander": "15.0.0"
+  }
+}

@@ -1,0 +1,21 @@
+apiVersion: raion/v1alpha1
+kind: Service
+metadata:
+  name: checkout-api
+spec:
+  description: Takes orders and payments
+  team: checkout
+  owner: checkout-oncall@example.com
+  tier: critical
+  type: api
+  language: nodejs
+  dependencies:
+    - service: catalog-api
+    - external: { name: payments-ledger, kind: postgresql }
+  runbooks:
+    - alert: ServiceHighErrorRate
+      url: https://wiki.example.com/runbooks/checkout-errors
+    - alert: ServiceTelemetryMissing
+      url: https://wiki.example.com/runbooks/checkout-missing-telemetry
+    - slo: availability
+      url: https://wiki.example.com/runbooks/checkout-availability

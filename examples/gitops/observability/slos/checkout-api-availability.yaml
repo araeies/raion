@@ -1,0 +1,11 @@
+apiVersion: raion/v1alpha1
+kind: SLO
+metadata:
+  name: availability
+spec:
+  service: checkout-api
+  description: Customers can check out
+  sli: { type: availability }
+  target: 99.9
+  window: 30d
+  policy: Freeze feature releases of checkout until the budget recovers.

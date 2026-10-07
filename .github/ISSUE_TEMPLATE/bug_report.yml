@@ -1,0 +1,44 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Do not report security vulnerabilities here** — see SECURITY.md.
+        Please remove secrets, tokens and internal hostnames from anything you paste.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The smallest workspace (raion.yaml, services/*.yaml) and commands that show the problem.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: Output of the failing command, e.g. `raion validate --format json`.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Raion version
+      description: Output of `raion --version`
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node.js version, Docker version
+    validations:
+      required: true

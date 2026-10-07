@@ -1,0 +1,11 @@
+# Standalone SLO document. Equivalent to adding it under the service's spec.slos.
+apiVersion: raion/v1alpha1
+kind: SLO
+metadata:
+  name: latency
+spec:
+  service: payment-api
+  description: Payment requests served in under 500ms
+  sli: { type: latency, thresholdMs: 500 }
+  target: 99
+  window: 30d

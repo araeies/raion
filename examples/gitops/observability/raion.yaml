@@ -1,0 +1,17 @@
+# A team's observability, kept in Git. Every change goes through a pull request: CI validates
+# it, shows what it changes in the stack, and runs the advisor (see .github/workflows).
+apiVersion: raion/v1alpha1
+kind: Workspace
+metadata:
+  name: shop
+  description: Observability for the shop, managed through pull requests
+spec:
+  level: 3
+  teams:
+    - name: checkout
+    - name: platform
+  advisor:
+    ignore:
+      - rule: database-not-monitored
+        subject: payments-ledger
+        reason: Run by the payments provider; we only see it as an external API.

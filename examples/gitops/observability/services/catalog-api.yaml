@@ -1,0 +1,9 @@
+apiVersion: raion/v1alpha1
+kind: Service
+metadata:
+  name: catalog-api
+spec:
+  description: Products and prices
+  team: platform
+  type: api
+  language: python

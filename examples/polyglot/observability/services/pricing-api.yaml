@@ -1,0 +1,12 @@
+apiVersion: raion/v1alpha1
+kind: Service
+metadata:
+  name: pricing-api
+spec:
+  description: Prices products, with a Redis cache
+  team: shop
+  type: api
+  language: go
+  runtime: { type: compose }
+  dependencies:
+    - service: pricing-cache

@@ -1,0 +1,29 @@
+name: Integration request
+description: Ask for (or offer to build) an integration for a technology
+labels: [integration]
+body:
+  - type: input
+    id: technology
+    attributes:
+      label: Technology
+      description: e.g. RabbitMQ, MongoDB, Caddy
+    validations:
+      required: true
+  - type: textarea
+    id: signals
+    attributes:
+      label: What should be observed?
+      description: Metrics, logs, traces, and the questions you want dashboards and alerts to answer.
+    validations:
+      required: true
+  - type: textarea
+    id: existing
+    attributes:
+      label: Existing exporters or OpenTelemetry receivers
+      description: Links to the upstream exporter / receiver that the integration would configure.
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I would like to help build this integration
