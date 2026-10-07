@@ -15,4 +15,4 @@ Connects Python services to the observability stack **without changing their cod
 3. Run `raion connect` and start the service with the generated override (Compose), or with the printed environment variables.
 4. Check it: `raion verify --service <name>`.
 
-With gunicorn or uWSGI (pre-forking), see the [integrations guide](../../../docs/guides/integrations.md#python).
+With gunicorn or uWSGI (pre-forking), see the [integrations guide](../../../docs/integrations/python.md).

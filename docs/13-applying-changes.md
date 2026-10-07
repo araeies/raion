@@ -1,6 +1,6 @@
-# Deploying the observability stack
+# Applying changes
 
-This guide explains what `raion apply` runs, how to check it is working, and what to do when it is not.
+Your workspace files describe what Raion should run. When you change them, Raion shows you what will change, validates it, and deploys it safely, keeping every earlier version so you can go back. This page explains that workflow, how to see the configuration Raion generates, and how to detect changes made behind Raion's back.
 
 ## What gets deployed
 
@@ -13,7 +13,7 @@ Raion runs these open-source components as one Docker Compose project, configure
 | loki           | Stores logs                                                                        | [Grafana Loki](https://grafana.com/oss/loki/)                            |
 | tempo          | Stores traces (only when a service uses tracing, level 2+)                         | [Grafana Tempo](https://grafana.com/oss/tempo/)                          |
 | grafana        | Dashboards and exploration                                                         | [Grafana](https://grafana.com/oss/grafana/)                              |
-| alertmanager   | Groups and routes alerts ([Alerting](alerting.md))                                 | [Alertmanager](https://prometheus.io/docs/alerting/latest/alertmanager/) |
+| alertmanager   | Groups and routes alerts ([Alerting](09-alerts.md))                                | [Alertmanager](https://prometheus.io/docs/alerting/latest/alertmanager/) |
 | node-exporter  | Host CPU, memory, disk and filesystem metrics                                      | [node_exporter](https://github.com/prometheus/node_exporter)             |
 | cadvisor       | Per-container metrics (only with `infrastructure.containers: true`)                | [cAdvisor](https://github.com/google/cadvisor)                           |
 | gateway        | The only way in: only Raion holds its key                                          | [nginx](https://nginx.org)                                               |
@@ -23,11 +23,14 @@ Every image is pinned by digest, and every container drops all Linux capabilitie
 ## The workflow
 
 ```sh
+raion validate   # are the workspace files correct?
 raion plan       # what would change, and is the generated configuration valid?
 raion apply      # show the plan, ask, then deploy
 raion status     # is every component running and ready? is the stack monitoring itself?
 raion verify     # send test telemetry and confirm it is stored
 ```
+
+**In the web UI**, open **Observability stack**. **Pending changes** shows the same plan as `raion plan`. Editors click **Apply changes**; the deployment runs in the background, with its progress shown on the page. Changes that need elevated privileges or affect stored data show a checkbox to approve them, and only admins can apply them.
 
 ### `raion plan`
 
@@ -72,10 +75,14 @@ In the web UI, these changes can only be applied by an admin.
 Three checks:
 
 - `raion verify`: the pipeline itself (below)
-- `raion verify --service <name>`: what one service sends ([Connecting applications](connecting-applications.md))
-- `raion verify --dashboards`: every generated dashboard loads and shows data ([Dashboards](dashboards.md))
+- `raion verify --service <name>`: what one service sends ([Connecting applications](05-connecting-a-service.md))
+- `raion verify --dashboards`: every generated dashboard loads and shows data ([Dashboards](08-dashboards.md))
 
 `raion verify` sends one metric, one log line and one trace span to the collector, exactly like an instrumented application would. It then checks that each one arrived in Prometheus, Loki and Tempo. It prints the queries it used, so you can repeat them in Grafana.
+
+### `raion validate`
+
+Checks every workspace file: schema, references between services, teams and SLOs, and secrets written into files by mistake. Each problem comes with its file, line and a hint; see [validation codes](reference/validation-codes.md). `--deep` also generates the configuration and runs each component's own validator on it (needs Docker). Exit code 1 means errors, so it fits CI.
 
 ### Rolling back and stopping
 
@@ -95,7 +102,7 @@ raion drift            # lists each difference; exit code 3 when there is drift
 raion drift --repair   # restore the deployed release (files and containers)
 ```
 
-`raion status` and the Observability stack page show drift too. See [GitOps](gitops.md).
+`raion status` shows drift too. In the web UI, the **Observability stack** page shows a notice listing each difference, and editors can click **Restore release …**. Every repair is recorded in the audit log. Changes to your workspace that are not deployed yet are not drift: they appear under pending changes. See also [Working through Git](14-gitops.md).
 
 ## Opening Grafana
 
@@ -105,30 +112,15 @@ Grafana is not reachable directly: requests go through Raion, which checks your 
 
 ## Sending telemetry
 
-| From                                    | Send OTLP to                                                                                                  |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| A program on this machine               | gRPC `127.0.0.1:4317`, HTTP `http://127.0.0.1:4318`                                                           |
-| A container in your own Compose project | Join the `raion-ingest` network, then use `otel-collector:4317` (gRPC) or `http://otel-collector:4318` (HTTP) |
+Applications send OpenTelemetry data (OTLP) to the collector: from this machine to `127.0.0.1:4317` (gRPC) or `http://127.0.0.1:4318` (HTTP); from Compose containers on the `raion-ingest` network to `otel-collector:4317` or `http://otel-collector:4318`. `raion connect` sets this up for you; see [Connecting a service](05-connecting-a-service.md).
 
-```yaml
-# In your application's compose file
-services:
-  my-api:
-    networks: [default, raion-ingest]
-    environment:
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: my-api
-networks:
-  raion-ingest:
-    external: true
-```
+## Viewing the generated configuration
 
-Phase 3 generates this for Node.js services automatically.
+Raion turns your workspace into ordinary configuration files for each component. To see them:
 
-## Seeing and reusing the generated configuration
-
-- `raion render --out ./generated` writes every generated file to a folder.
-- In the web UI, the **Observability stack** page shows each file.
+- **In the web UI:** **Observability stack → Generated configuration**; click a file to read it. A service's page shows the workspace files that define it under **Configuration**.
+- **On the command line:** `raion render observability --out ./generated` writes every generated file to a folder.
+- **Before deploying:** `raion plan` lists the files a change touches; `raion diff` shows the exact lines that change between two versions of a workspace ([Working through Git](14-gitops.md)).
 
 These are standard files. You can run the stack without Raion with `docker compose -f compose.yaml up -d`; it needs the secret files in `../secrets`, which `raion apply` creates.
 
@@ -158,9 +150,8 @@ Set `RAION_STATE_DIR` to an absolute path to keep this state elsewhere, for exam
 | `raion verify` reports a signal missing                      | Run `raion status`; the component that stores that signal is usually not ready.                                                                   |
 | `apply already in progress by …`                             | Someone else is deploying. Wait, or if their process crashed, the lock is taken over automatically after 30 minutes.                              |
 
-## Known limitations
+## Limitations
 
 - **Host network metrics.** Network metrics describe node-exporter's own container interface, not the host's network. CPU, memory, disk and filesystem metrics are the host's.
 - **Docker Desktop (Windows/macOS).** "Host" metrics describe Docker's Linux VM, not your laptop.
 - **Grafana Live** (instant streaming updates) is off. Dashboards refresh normally.
-- **Container logs** (stdout of containers) are not collected yet. Applications send logs over OTLP (Phase 3).

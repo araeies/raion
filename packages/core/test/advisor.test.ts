@@ -138,7 +138,7 @@ describe('advisor rules (configuration only)', () => {
 
   it('service-without-golden-signals: explains that the language has no integration yet', () => {
     const f = find(report.findings, 'service-without-golden-signals/fraud-api');
-    expect(f.fix).toContain('no java integration yet');
+    expect(f.fix).toContain('Raion has no java integration');
     expect(f.autofix).toBeUndefined();
   });
 

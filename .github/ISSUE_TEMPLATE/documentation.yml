@@ -1,0 +1,22 @@
+name: Documentation problem
+description: Documentation that is wrong, unclear, out of date or missing
+labels: [documentation]
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Page
+      description: The page or section (a link is best)
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is the problem?
+      description: What did you expect to find or understand, and what did the documentation say (or not say)?
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: What were you trying to do?

@@ -1,6 +1,15 @@
-## What and why
+<!--
+Pull requests are accepted only for documentation typo fixes, or within the scope the
+maintainer agreed in an issue. Others will be closed. See CONTRIBUTING.md.
+-->
 
-<!-- What does this change do, and what problem does it solve? Link the issue. -->
+## Accepted issue
+
+<!-- "Closes #123". Not needed for documentation typo fixes. -->
+
+## What this changes
+
+<!-- Within the scope agreed in the issue. -->
 
 ## How it was tested
 
@@ -8,9 +17,10 @@
 
 ## Checklist
 
+- [ ] Stays within the scope agreed in the issue
 - [ ] `pnpm run check` passes locally
 - [ ] Tests cover the change (or explain why not)
-- [ ] User-facing behaviour is documented (`docs/`), including what it is, why it exists and how to troubleshoot it
+- [ ] User-facing behaviour is documented in `docs/`, from the user's point of view
+- [ ] No new dependencies (unless agreed in the issue)
 - [ ] No secrets, credentials or internal hostnames in code, fixtures or examples
-- [ ] New dependencies are justified in the PR description (we keep the dependency tree small)
-- [ ] `CHANGELOG.md` updated under "Unreleased"
+- [ ] `CHANGELOG.md` updated under "Unreleased", in user terms

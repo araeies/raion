@@ -62,9 +62,9 @@ describe('schema errors point at the right line', () => {
     });
   });
 
-  it('explains that level 4 is reserved', () => {
+  it('explains that level 4 is not available', () => {
     const result = workspace('  level: 4\n');
-    expect(result.diagnostics[0]!.message).toContain('level 4 (advanced) is reserved');
+    expect(result.diagnostics[0]!.message).toContain('level 4 is not available');
     expect(result.diagnostics[0]!.line).toBe(6);
   });
 

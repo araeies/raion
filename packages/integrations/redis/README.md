@@ -14,4 +14,4 @@ integrations:
       # password: ${secret:CACHE_PASSWORD}   # if Redis requires one
 ```
 
-Parameters: `endpoint` (required), `username` (ACL user), `password` (a secret reference), `tls` (default false). See the [integrations guide](../../../docs/guides/integrations.md#redis).
+Parameters: `endpoint` (required), `username` (ACL user), `password` (a secret reference), `tls` (default false). See the [integrations guide](../../../docs/integrations/redis.md).

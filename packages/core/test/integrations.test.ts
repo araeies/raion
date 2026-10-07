@@ -234,6 +234,6 @@ describe('connecting services', () => {
     const ws = result.workspace!;
     const c = connectService(ws, ws.services[0]!);
     expect(c.supported).toBe(false);
-    expect(c.notes[0]).toContain('There is no java integration yet');
+    expect(c.notes[0]).toContain('Raion has no java integration');
   });
 });

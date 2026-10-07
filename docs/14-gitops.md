@@ -1,16 +1,16 @@
-# Observability through Git (GitOps)
+# Working through Git
 
 Raion's workspace is plain YAML, meant for Git. This guide shows how a team reviews, deploys and audits its observability the way it does code.
 
-| Step   | Command                                                                                         | What it guarantees                                                                                                  |
-| ------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Edit   | your editor (with the [JSON Schema](configuration.md)), `raion slo add`, `raion advise --apply` | Changes are files                                                                                                   |
-| Review | `raion diff <base> <head>`                                                                      | Reviewers see which components restart, privileged or data-affecting changes, and every generated file that changes |
-| Check  | `raion validate --deep`, `raion advise --fail-on warning`                                       | Invalid configuration and observability gaps fail the pull request                                                  |
-| Deploy | `raion plan`, `raion apply`                                                                     | Only what was reviewed is deployed; escalations stop for a person                                                   |
-| Audit  | `raion drift`                                                                                   | Changes made to the running stack behind Raion's back are found, and `--repair` undoes them                         |
+| Step   | Command                                                                                            | What it guarantees                                                                                                  |
+| ------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Edit   | your editor (with the [JSON Schema](06-configuration.md)), `raion slo add`, `raion advise --apply` | Changes are files                                                                                                   |
+| Review | `raion diff <base> <head>`                                                                         | Reviewers see which components restart, privileged or data-affecting changes, and every generated file that changes |
+| Check  | `raion validate --deep`, `raion advise --fail-on warning`                                          | Invalid configuration and observability gaps fail the pull request                                                  |
+| Deploy | `raion plan`, `raion apply`                                                                        | Only what was reviewed is deployed; escalations stop for a person                                                   |
+| Audit  | `raion drift`                                                                                      | Changes made to the running stack behind Raion's back are found, and `--repair` undoes them                         |
 
-[examples/gitops](../../examples/gitops) has a complete repository: workspace, CODEOWNERS and the three workflows. Raion's own CI runs its pull-request check.
+[examples/gitops](../examples/gitops) has a complete repository: workspace, CODEOWNERS and the three workflows.
 
 ## Reviewing a change: `raion diff`
 
@@ -50,7 +50,7 @@ jobs:
           fail-on: warning
 ```
 
-The [action](../../actions/check/action.yml):
+The [action](../actions/check/action.yml):
 
 1. builds Raion from the pinned commit
 2. validates (and with `deep`, runs each component's own validator)

@@ -1,0 +1,27 @@
+name: Suggestion
+description: A capability you need that Raion does not have
+labels: [suggestion]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. The maintainer reviews every suggestion and decides whether and how Raion addresses it (see GOVERNANCE.md). Describing your situation helps most.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation and the goal, not the solution. What do you do today instead?
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Why does it matter?
+      description: Who is affected, how often, and what it costs you today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Ideas (optional)
+      description: If you have a solution in mind, describe it here.

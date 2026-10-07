@@ -25,7 +25,7 @@ const runtime = z.discriminatedUnion(
     z.strictObject({ type: z.literal('host') }),
   ],
   {
-    error: 'runtime.type must be "compose" or "host" (Kubernetes, ECS and VM targets are planned)',
+    error: 'runtime.type must be "compose" (Docker Compose) or "host" (a process on this machine)',
   },
 );
 

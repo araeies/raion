@@ -32,5 +32,5 @@ The MVP is complete when a new user can do each of the following. This page reco
 These are known gaps that do not block the items above:
 
 - **Docker Desktop host metrics.** On Windows and macOS, "host" metrics describe Docker's Linux VM, and network metrics are node_exporter's own container interface.
-- **Languages.** Node.js, Python and Go have integrations (Phase 8). Java, .NET and PHP send OTLP using the OpenTelemetry SDK and work for logs and traces, but get no automatic HTTP capability (and so no golden signals, service alerts or SLO templates) unless a team adds a [workspace package](../guides/writing-integrations.md).
+- **Languages.** Node.js, Python and Go have integrations (Phase 8). Java, .NET and PHP send OTLP using the OpenTelemetry SDK and work for logs and traces, but get no automatic HTTP capability (and so no golden signals, service alerts or SLO templates) unless a team adds a [workspace package](../../integrations/writing-integrations.md).
 - **Visual review.** The UI has component tests but no browser-level end-to-end or accessibility tests yet.

@@ -2,10 +2,7 @@
 
 An integration package teaches Raion about one technology. It is **data only**: a manifest (`integration.yaml`) and its documentation. Raion never runs code from a package.
 
-There are two places a package can live:
-
-- **In Raion** (`packages/integrations/<name>/`), for integrations everyone can use. See [CONTRIBUTING](../../CONTRIBUTING.md).
-- **In your workspace** (`integrations/<name>/`, next to `raion.yaml`), for your team's own needs. A typical case is a language Raion does not cover yet.
+This page explains how to add an integration to **your workspace** (`integrations/<name>/`, next to `raion.yaml`), for your team's own needs, such as a language Raion does not cover. The integrations included with Raion are chosen and maintained by the Raion maintainer; to suggest one, [open an issue](../../CONTRIBUTING.md).
 
 ## What a package can do
 
@@ -118,4 +115,3 @@ Package signatures are not supported yet.
 1. `raion validate`: the manifest is checked against the schema and the placeholder rules (`RAI-E025` names the problem and the file).
 2. Connect a real service: `raion connect`, then `raion verify --service <name>`.
 3. `raion verify --dashboards`: proves the declared metric names are right.
-4. For a package contributed to Raion, add tests in `packages/core/test/` and an end-to-end test with a real application, as `e2e/polyglot.e2e.mjs` does. It checks that the histogram buckets each application emits match its manifest.

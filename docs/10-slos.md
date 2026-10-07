@@ -1,4 +1,4 @@
-# Service level objectives (SLOs)
+# SLOs and error budgets
 
 An **SLO** says how reliable a service must be for the people who use it, for example _"99.9% of payment requests succeed, measured over 30 days"_. Raion turns that sentence into measurements, error budgets, dashboards and alerts. You don't write PromQL.
 
@@ -72,7 +72,7 @@ Availability, latency and throughput need a service with HTTP metrics, for examp
   - an **SLO row** on the service's dashboard
 - **The error budget policy** (`policy`), shown with the SLO and included in its alerts.
 
-Alerts go where the service's other alerts go: the inbox, the team's receiver at level 3, or the default receiver. See [Alerting](alerting.md).
+Alerts go where the service's other alerts go: the inbox, the team's receiver at level 3, or the default receiver. See [Alerting](09-alerts.md).
 
 ## Reading the status
 

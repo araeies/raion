@@ -114,7 +114,7 @@ const criticalServiceWithoutSlo: Rule = (ctx) =>
         fix: hasHttpMetrics(svc)
           ? `Add an availability SLO. A 99.9% objective over 30 days is a common first choice; adjust it to what ${svc.name} achieves today.`
           : `Add a custom SLO with your own PromQL. Availability and latency SLOs need HTTP metrics, which no integration of ${svc.name} provides.`,
-        docs: 'guides/slos.md',
+        docs: '10-slos.md',
         autofix: firstSloFix(ctx, svc),
       }),
     );
@@ -135,7 +135,7 @@ const busiestServiceWithoutSlo: Rule = (ctx) => {
       why: `${SLO_WHY} The busiest service is usually the one users notice first.`,
       fix: 'Add an availability SLO, and consider a latency SLO for the routes users wait on.',
       evidence: `${rate(rates[busiest.name]!)} requests over the last ${ctx.facts!.window}`,
-      docs: 'guides/slos.md',
+      docs: '10-slos.md',
       autofix: firstSloFix(ctx, busiest),
     }),
   ];
@@ -152,7 +152,7 @@ const slosNotEvaluated: Rule = (ctx) =>
         title: `${svc.name} has ${svc.slos.length === 1 ? 'an SLO' : `${svc.slos.length} SLOs`} that ${svc.slos.length === 1 ? 'is' : 'are'} not measured`,
         why: `SLOs are evaluated from level 3, and ${svc.name} is at level ${svc.level}. The SLO is written down but has no error budget, dashboard or burn-rate alert.`,
         fix: `Set "features: { slos: true }" on ${svc.name} (or raise the level to 3), then apply.`,
-        docs: 'guides/slos.md',
+        docs: '10-slos.md',
         autofix: enable
           ? { summary: `Turn on SLOs for ${svc.name}`, changes: [enable] }
           : undefined,
@@ -180,7 +180,7 @@ const serviceWithoutAlerts: Rule = (ctx) =>
         title: `${svc.name} sends metrics but has no alerts`,
         why: 'Nobody is told when its error rate or latency rises, or when it stops sending telemetry. Problems are found by users first.',
         fix: `Turn its alerts back on (${!svc.alerts.enabled ? '"alerts: { enabled: true }"' : '"features: { basicAlerts: true }"'}). If they were too noisy, raise "alerts.errorRatePercent", "alerts.latencyP95Ms" or "alerts.for" instead.`,
-        docs: 'guides/alerting.md',
+        docs: '09-alerts.md',
         autofix: enable
           ? { summary: `Turn on the generated alerts for ${svc.name}`, changes: [enable] }
           : undefined,
@@ -205,14 +205,14 @@ const serviceWithoutGoldenSignals: Rule = (ctx) =>
         ? `Set "language" on ${svc.name}. Raion then picks the matching integration, if there is one.`
         : available
           ? `Add the "${available.manifest.metadata.name}" integration (or remove "integrations: []" so it is chosen from the language).`
-          : `Raion has no ${svc.language} integration yet (more languages are planned). Until then, send telemetry with the OpenTelemetry SDK; logs and traces work, and a custom SLO can use your own metrics.`;
+          : `Raion has no ${svc.language} integration. Send telemetry with the OpenTelemetry SDK, or add your own integration package; logs and traces work, and a custom SLO can use your own metrics.`;
       return finding('service-without-golden-signals', svc.name, {
         severity: svc.tier === 'critical' ? 'warning' : 'info',
         category: 'coverage',
         title: `${svc.name} has no request rate, error or latency metrics`,
         why: 'Without HTTP metrics Raion cannot build its golden-signal dashboard, error-rate and latency alerts, or availability and latency SLOs.',
         fix,
-        docs: 'guides/connecting-applications.md',
+        docs: '05-connecting-a-service.md',
       });
     });
 
@@ -257,7 +257,7 @@ const pageAlertWithoutRunbook: Rule = (ctx) =>
         why: 'A runbook tells the person on call what to check and how to mitigate. Without one, every incident starts from zero, often at night.',
         fix: `Add runbook links under "runbooks" of ${svc.name}, for example ${runbookExample(missing[0]!)} with a "url". They appear in the alert and its notification.`,
         evidence: `Without a runbook: ${missing.join(', ')}`,
-        docs: 'guides/alerting.md',
+        docs: '09-alerts.md',
       }),
     ];
   });
@@ -312,7 +312,7 @@ const databaseNotMonitored: Rule = (ctx) => {
       title: `${DATABASE_KINDS[kind]} "${name}" is not monitored`,
       why: `${services.join(', ')} ${services.length === 1 ? 'depends' : 'depend'} on it. When it slows down or runs out of connections, you see only the symptoms in the services, not the cause.`,
       fix: monitorAdvice(kind, name),
-      docs: 'guides/integrations.md',
+      docs: 'integrations/README.md',
     }),
   );
   // Services declared as databases that nothing reads.
@@ -327,7 +327,7 @@ const databaseNotMonitored: Rule = (ctx) => {
         title: `The database ${svc.name} is not monitored`,
         why: `Its dependents see slow queries and connection errors, but not the cause: connections, locks, cache and disk of ${svc.name} itself.`,
         fix: 'Add the integration for its engine (postgresql or redis), with an "endpoint" and a monitoring user. Other engines have no integration yet.',
-        docs: 'guides/integrations.md',
+        docs: 'integrations/README.md',
       }),
     );
   return [...external, ...declared];
@@ -352,7 +352,7 @@ const dependenciesNotTraced: Rule = (ctx) =>
         title: `The dependencies of ${svc.name} are declared but not traced`,
         why: `Without traces, the declared dependencies cannot be checked against reality, the service map stays empty, and a slow downstream call cannot be told apart from slowness in ${svc.name} itself.`,
         fix: `Turn on traces and the service graph for ${svc.name} (level 2 includes both), apply, then run "raion connect" again and restart the service so it starts sending traces.`,
-        docs: 'guides/dashboards.md',
+        docs: '08-dashboards.md',
         autofix: enable
           ? { summary: `Turn on traces and the service graph for ${svc.name}`, changes: [enable] }
           : undefined,
@@ -381,7 +381,7 @@ const undeclaredDependency: Rule = (ctx) => {
           fix: `Add "- service: ${e.server}" under "dependencies" of ${e.client}.`,
           evidence: `${rate(e.requestsPerSecond)} calls seen in traces over the last ${ctx.facts!.window}`,
           query: `sum by (client, server) (rate(traces_service_graph_request_total{client="${e.client}", server="${e.server}"}[5m]))`,
-          docs: 'guides/dashboards.md',
+          docs: '08-dashboards.md',
           autofix: add
             ? { summary: `Declare that ${e.client} depends on ${e.server}`, changes: [add] }
             : undefined,
@@ -413,7 +413,7 @@ const unusedDependency: Rule = (ctx) => {
           why: 'Either the dependency is gone and the declaration is out of date, or the calls are not traced (for example, a client library without instrumentation), which hides them from the service map and traces.',
           fix: `If ${svc.name} no longer calls ${dep.service}, remove it from "dependencies". Otherwise check that the client it uses is instrumented. The call may also be rare; ignore this finding if so.`,
           evidence: `${svc.name} handled ${rate(requestRates[svc.name]!)} requests over the last ${ctx.facts!.window} without calling ${dep.service}`,
-          docs: 'guides/dashboards.md',
+          docs: '08-dashboards.md',
         }),
       ];
     }),
@@ -450,7 +450,7 @@ const lowLogTraceCorrelation: Rule = (ctx) => {
           : "Use a logging library that the service's OpenTelemetry SDK instruments, so trace and span IDs are added to each line written during a request.",
         evidence: `${counts.withTraceId} of ${counts.lines} log lines over the last ${ctx.facts!.window} carry a trace ID`,
         query: `{service_name="${svc.name}"} | trace_id = ""`,
-        docs: 'guides/connecting-applications.md',
+        docs: '05-connecting-a-service.md',
       }),
     ];
   });
@@ -483,7 +483,7 @@ const collectorDroppingTelemetry: Rule = (ctx) => {
       why: 'Lost telemetry leaves gaps in dashboards, can hide errors from alerts and SLOs, and makes traces incomplete.',
       fix: `${causes.join('. ')}. Run "raion status" and open the "Raion · Stack health" dashboard to see which signal and component are affected. If applications send bursts, reduce log volume or sample traces.`,
       evidence: `${Math.round(dropped)} of ${Math.round(c.received)} items over the last ${ctx.facts!.window}`,
-      docs: 'guides/deploying.md',
+      docs: '16-raion-health.md',
     }),
   ];
 };

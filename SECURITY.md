@@ -28,4 +28,4 @@ Out of scope:
 
 ## Security design
 
-The security model is described in [docs/design/phase-0-architecture.md §11](docs/design/phase-0-architecture.md) and, for operators, in [docs/guides/security.md](docs/guides/security.md).
+How Raion protects accounts, secrets and the observability stack is described in [Users, roles and security](docs/15-users-and-security.md).

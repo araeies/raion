@@ -1,0 +1,27 @@
+name: Usability problem
+description: Something works, but is hard to understand or use
+labels: [usability]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What were you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: difficulty
+    attributes:
+      label: What made it hard?
+      description: Where you got stuck, what was confusing, what you expected to see. Screenshots help (remove secrets).
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: The page in the web UI, or the command
+  - type: input
+    id: version
+    attributes:
+      label: Raion version
+      description: Output of `raion --version`

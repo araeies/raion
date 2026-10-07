@@ -1,4 +1,4 @@
-# The Observability Advisor
+# The Advisor
 
 The advisor looks for common gaps in your observability and tells you, for each one:
 

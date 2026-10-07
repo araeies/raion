@@ -1,29 +1,32 @@
 name: Integration request
-description: Ask for (or offer to build) an integration for a technology
+description: A technology Raion should support (a language, database, proxy…)
 labels: [integration]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. The maintainer decides which integrations Raion includes (see GOVERNANCE.md). Your team can also add one to its own workspace: see docs/integrations/writing-integrations.md.
   - type: input
     id: technology
     attributes:
       label: Technology
-      description: e.g. RabbitMQ, MongoDB, Caddy
+      description: For example RabbitMQ, MongoDB, Java, Caddy
     validations:
       required: true
   - type: textarea
     id: signals
     attributes:
       label: What should be observed?
-      description: Metrics, logs, traces, and the questions you want dashboards and alerts to answer.
+      description: The questions you want dashboards and alerts to answer, and which metrics, logs or traces you need.
     validations:
       required: true
   - type: textarea
+    id: setup
+    attributes:
+      label: How you run it
+      description: Versions, and whether it runs in Docker Compose or on a host.
+  - type: textarea
     id: existing
     attributes:
-      label: Existing exporters or OpenTelemetry receivers
-      description: Links to the upstream exporter / receiver that the integration would configure.
-  - type: checkboxes
-    id: contribute
-    attributes:
-      label: Contribution
-      options:
-        - label: I would like to help build this integration
+      label: Existing exporters or OpenTelemetry instrumentation (optional)
+      description: Links to upstream projects that already expose this technology's telemetry.

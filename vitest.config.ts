@@ -20,5 +20,8 @@ export default defineConfig({
       'apps/web/src/**/*.test.tsx',
     ],
     testTimeout: 20_000,
+    // The first server build in a file loads the whole app; under full parallel load (and on
+    // slower CI runners) that cold start can exceed the 10 s default for hooks.
+    hookTimeout: 30_000,
   },
 });

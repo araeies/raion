@@ -1,101 +1,52 @@
 # Contributing to Raion
 
-Thank you for helping! Raion is built by and for people who are not necessarily observability experts, so clear explanations matter as much as code.
+Raion is open source, and reports from people who use it are what make it better. This page explains how the project is run and how to help.
 
-## Development setup
+## How Raion is run
 
-You need **Node.js 24+** and **Git**. Docker is needed from Phase 2 onwards.
+Raion has a single owner and maintainer, who decides its architecture, design, user experience, technology choices and roadmap. It is open source, but **not community-governed**: there is no shared ownership of its design or direction, and contributions do not come with a say in them. See [GOVERNANCE](GOVERNANCE.md).
 
-```sh
-corepack enable          # provides the pnpm version pinned in package.json
-pnpm install
-pnpm run check           # format, lint, type check, build, test, validate examples
-```
+The way to influence Raion is to **open an issue**. The maintainer reads every issue and decides what Raion does about it. A clear, well-explained report is the most valuable contribution you can make.
 
-If `corepack enable` fails with a permissions error (common on Windows without admin rights), install the shim into a user directory that is on your `PATH`:
+## What to report
 
-```sh
-corepack enable --install-directory "$APPDATA/npm" pnpm     # Windows (Git Bash)
-corepack enable --install-directory ~/.local/bin pnpm      # Linux / macOS
-```
+| You found                                                   | Open                                                                           |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Something that does not work as documented                  | a **Bug report**                                                               |
+| Something hard to understand or use                         | a **Usability problem**                                                        |
+| Documentation that is wrong, unclear or missing             | a **Documentation problem**                                                    |
+| A capability you need that Raion does not have              | a **Suggestion**                                                               |
+| A technology Raion should support (a language, a database…) | an **Integration request**                                                     |
+| A security vulnerability                                    | **not an issue**: report it privately, as described in [SECURITY](SECURITY.md) |
 
-Useful commands:
+Search existing issues first; if yours exists, add what is new to it rather than opening another.
 
-| Command                             | What it does                                                                   |
-| ----------------------------------- | ------------------------------------------------------------------------------ |
-| `pnpm run build`                    | Compile all packages and the web UI                                            |
-| `pnpm test` / `pnpm run test:watch` | Run tests (against sources, no build needed)                                   |
-| `pnpm run lint`                     | ESLint with type-aware rules and layer boundaries                              |
-| `pnpm run typecheck`                | TypeScript, including test files                                               |
-| `pnpm raion <command>`              | Run the built CLI                                                              |
-| `pnpm --filter @raion/web dev`      | UI dev server with hot reload; proxies `/api` to a `raion server` on port 7600 |
-| `pnpm run test:e2e`                 | Full-stack test: deploys, verifies, updates and destroys a real stack (Docker) |
-| `node scripts/update-images.mjs`    | Re-resolve image digests after changing a tag (`--check` detects drift)        |
+## A useful report
 
-### Platform notes
+A report the maintainer can act on usually includes:
 
-Raion is developed on Linux, macOS and Windows, and CI runs on all three.
+- **What you were trying to do**, and why: the goal, not only the command.
+- **What happened**, and what you expected instead.
+- **How to reproduce it**: the smallest workspace and the commands that show the problem.
+- **Output**: the full output of the failing command. `raion validate --format json`, `raion status` and `raion --version` help with most problems.
+- **Where you run it**: operating system, Docker version, and whether it is Docker Desktop.
 
-- Repository scripts are Node.js, not shell scripts, so they work everywhere.
-- Line endings are normalized to LF (`.gitattributes`).
-- **Docker Desktop (Windows/macOS):** host metrics will describe Docker's Linux VM, not your laptop. This is expected. Full-stack end-to-end tests run on Linux in CI.
-- On Windows, file permissions on `.raion/` (secrets, database) are not restricted the way they are on Linux and macOS. Keep workspaces in your user profile.
+**Remove secrets** before pasting anything: passwords, tokens, webhook URLs, internal hostnames. Workspace files never contain secret values, but command output and environment variables can.
 
-## Repository layout
+## What happens next
 
-| Path                  | Contents                                                                                                         |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `packages/schema`     | Configuration schemas (zod) and the JSON Schema export                                                           |
-| `packages/core`       | Loading, validation, resolution, the service registry and runtime generators. Pure: no network, no processes.    |
-| `packages/deploy`     | Deployment engine: releases, plans, Docker Compose target, gateway client. The only package that runs processes. |
-| `apps/server`         | The control plane: API, auth, user store, UI hosting                                                             |
-| `apps/cli`            | The `raion` command                                                                                              |
-| `apps/web`            | The web UI (React)                                                                                               |
-| `examples/workspaces` | Example workspaces. Each is validated in CI.                                                                     |
-| `docs/`               | Design docs and user guides                                                                                      |
+The maintainer reviews each issue and decides whether, how and when to address it. An issue may be accepted, deferred or declined, even when the request is reasonable, because it does not fit Raion's design or direction. A declined issue is not a judgement of its author.
 
-Layering rules (`core` must not import apps, and only deployment adapters may spawn processes) are enforced by ESLint. See [the architecture](docs/design/phase-0-architecture.md).
+## Pull requests
 
-## Making changes
+Pull requests are welcome **only within the boundaries the maintainer defines**:
 
-1. Open an issue first for anything non-trivial, so we can agree on the approach.
-2. Keep changes focused. Add tests for behaviour and docs for anything user-facing.
-3. Every user-facing feature is documented: what it is, why it exists, what Raion does, which OSS tool is underneath, how to troubleshoot it and how to customize it.
-4. Add an entry under "Unreleased" in `CHANGELOG.md`.
-5. Run `pnpm run check` before opening a pull request.
+- **Typo and wording fixes in the documentation** can be sent directly.
+- **Anything else needs an accepted issue first.** If the maintainer would welcome a pull request, the issue says so and describes the scope. Keep to that scope.
+- Pull requests that redesign existing behaviour, change the architecture, add dependencies, or were not agreed in an issue will be closed, however good the code.
 
-### Dependencies
-
-We keep the dependency tree small, because every dependency is supply-chain risk.
-
-- Explain why a new dependency is needed in the PR, and prefer Node.js built-ins.
-- Versions are pinned exactly.
-- pnpm refuses versions published less than 24 hours ago (`minimumReleaseAge`) and does not run dependency install scripts unless allow-listed.
-
-### Integrations
-
-Integrations live in `packages/integrations/<name>/`, as an `integration.yaml` and a README. They are data only: the schema in `packages/schema/src/integration.ts` defines everything they can declare, and placeholders are limited to the variables in `packages/core/src/integrations.ts`.
-
-A new integration needs:
-
-- tests in `packages/core/test/`
-- a README that covers what you get, how it works, setup, parameters, customizing and troubleshooting
-- if it instruments applications, an end-to-end test against a real application
-
-The [integration authoring guide](docs/guides/writing-integrations.md) explains the manifest, capabilities and how to check metric names against a running service.
-
-### Generated configuration
-
-Generator output is covered by golden files in `packages/core/test/__golden__/`. When you change a generator, run `pnpm exec vitest run packages/core -u`, then review the golden-file diff in your pull request. It shows exactly what changes for users. CI also runs the full-stack end-to-end test, which deploys the generated configuration for real.
-
-### Validation codes
-
-New validation errors get a stable code in `packages/core/src/diagnostics.ts` and an entry in `docs/guides/validation-codes.md`. Messages should say what is wrong in plain language, and hints should say how to fix it.
-
-## Security
-
-Never commit secrets, real hostnames or credentials, including in tests and examples. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+When you have been asked for a pull request, [Developing Raion](docs/internal/development.md) explains how to build, test and check your change. By submitting a pull request, you agree that it is licensed under the project's [Apache-2.0 licence](LICENSE).
 
 ## Code of conduct
 
-This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
+Everyone taking part in the project's issues and discussions follows the [Code of Conduct](CODE_OF_CONDUCT.md).

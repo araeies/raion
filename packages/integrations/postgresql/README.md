@@ -25,4 +25,4 @@ integrations:
       password: ${secret:ORDERS_DB_MONITOR_PASSWORD}
 ```
 
-Parameters: `endpoint` (required), `username` (default `raion_monitor`), `password` (required, a secret reference), `tls` (default false), `tableMetrics` (default false). See the [integrations guide](../../../docs/guides/integrations.md#postgresql).
+Parameters: `endpoint` (required), `username` (default `raion_monitor`), `password` (required, a secret reference), `tls` (default false), `tableMetrics` (default false). See the [integrations guide](../../../docs/integrations/postgresql.md).

@@ -84,8 +84,7 @@ const target = z.discriminatedUnion(
     }),
   ],
   {
-    error:
-      'target.type must be "docker-compose". Kubernetes, VM and cloud targets are planned for a later phase',
+    error: 'target.type must be "docker-compose" (Raion deploys the stack with Docker Compose)',
   },
 );
 

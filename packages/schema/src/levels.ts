@@ -11,7 +11,7 @@ export type Level = (typeof LEVELS)[number];
 export const level = z.union([z.literal(1), z.literal(2), z.literal(3)], {
   error: (issue) =>
     issue.input === 4
-      ? 'level 4 (advanced) is reserved for a future release. Use 1 (basic), 2 (production) or 3 (SRE)'
+      ? 'level 4 is not available. Use 1 (basic), 2 (production) or 3 (SRE)'
       : 'must be 1 (basic), 2 (production) or 3 (SRE)',
 });
 

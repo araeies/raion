@@ -19,7 +19,7 @@ The workspace is in [`observability/`](observability). Nothing secret is in this
 
 ## Run it
 
-Needs Docker and the `raion` command (see [Using raion from any folder](../../README.md#using-raion-from-any-folder)). Run these from this folder.
+Needs Docker and the `raion` command (see [Using raion from any folder](../../docs/02-installing.md#the-raion-command)). Run these from this folder.
 
 ```sh
 cd examples/polyglot

@@ -23,4 +23,4 @@ integrations:
 containerLogs: true # also keep the access and error logs
 ```
 
-See the [integrations guide](../../../docs/guides/integrations.md#nginx).
+See the [integrations guide](../../../docs/integrations/nginx.md).

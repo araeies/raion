@@ -16,4 +16,4 @@ Go compiles to machine code, so there is no zero-code option without elevated pr
 2. Copy `otel.go`; call `setupOTel(ctx)` at startup; wrap your `http.ServeMux` with `otelhttp.NewHandler`; log with `otelslog.NewLogger(...)` and the request's context.
 3. Run `raion connect` and start the service with the override, then `raion verify --service <name>`.
 
-Details: [integrations guide](../../../docs/guides/integrations.md#go).
+Details: [integrations guide](../../../docs/integrations/go.md).

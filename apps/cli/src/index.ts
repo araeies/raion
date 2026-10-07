@@ -211,7 +211,9 @@ program
 
 const secrets = program
   .command('secrets')
-  .description('manage secrets used by notification receivers (Slack webhooks, SMTP passwords…)');
+  .description(
+    'manage secrets: notification receivers (Slack webhooks, SMTP passwords…) and database monitoring credentials',
+  );
 
 secrets
   .command('set')

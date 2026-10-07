@@ -200,7 +200,7 @@ export function resolveWorkspace(
         svc.doc,
         [...svc.base, 'environment'],
         `service "${svc.name}" is in environment "${s.environment}" but this workspace is "${spec.environment}"`,
-        'a workspace currently manages one environment; use a separate workspace per environment (multi-environment support is planned)',
+        'a workspace manages one environment; use a separate workspace per environment',
       );
     }
     if (s.tier === 'critical' && !s.team && !s.owner) {

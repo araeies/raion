@@ -115,7 +115,7 @@ export function connectService(
       requirements: [],
       notes: [
         svc.language && !registry.defaultFor(svc.language)
-          ? `There is no ${svc.language} integration yet. Until then, instrument the service with the OpenTelemetry SDK for ${svc.language} and send OTLP to ${variables(ws, svc)['otlp.httpEndpoint']}.`
+          ? `Raion has no ${svc.language} integration. Instrument the service with the OpenTelemetry SDK for ${svc.language} and send OTLP to ${variables(ws, svc)['otlp.httpEndpoint']}, or add your own integration package.`
           : `Set "language" on service "${svc.name}" (for example "nodejs") so Raion can choose an integration.`,
       ],
     };

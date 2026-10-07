@@ -6,7 +6,7 @@ export type Severity = 'error' | 'warning';
  */
 export interface Diagnostic {
   severity: Severity;
-  /** Stable identifier, e.g. RAI-E012. Documented in docs/guides/validation-codes.md. */
+  /** Stable identifier, e.g. RAI-E012. Documented in docs/reference/validation-codes.md. */
   code: string;
   message: string;
   hint?: string;

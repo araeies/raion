@@ -331,10 +331,11 @@ export function SecretsSection() {
   if (result.state !== 'ready' || result.data.needed.length === 0) return null;
   return (
     <section aria-labelledby="secrets-title">
-      <h2 id="secrets-title">Notification secrets</h2>
+      <h2 id="secrets-title">Secrets</h2>
       <p className="muted">
-        Credentials your notification receivers use. Values are stored on the Raion server and can
-        be replaced but never read back. Apply afterwards so Alertmanager picks them up.
+        Credentials for notification receivers and database monitoring. Values are stored on the
+        Raion server and can be replaced but never read back. Apply afterwards so the components
+        pick them up.
       </p>
       <ul className="target-list">
         {result.data.needed.map((s) => (

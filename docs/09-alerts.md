@@ -1,4 +1,4 @@
-# Alerting
+# Alerts and notifications
 
 Raion watches your services, the host and the observability stack itself. It tells you when something needs attention: in the **Raion inbox** always, and by Slack, email or webhook if you set them up.
 
@@ -27,7 +27,7 @@ To avoid alerts caused by a single failed request, error and latency alerts are 
 | `RedisRejectingConnections`    | Connections refused because `maxclients` was reached                                                   | warning                                          |
 | `NginxDroppingConnections`     | Connections accepted but not handled (`worker_connections` limit)                                      | warning                                          |
 
-See [Integrations](integrations.md).
+See [Integrations](integrations/README.md).
 
 Tune them per service:
 
@@ -155,10 +155,10 @@ spec:
 
 The link appears in notifications and the inbox. Every service alert also links to the service's Grafana dashboard and its Raion page.
 
-## How it works
+## Under the hood
 
 - Rules are standard Prometheus alerting rules. Find them in `raion render` output under `prometheus/rules/`, or on the Observability stack page.
-- They are checked by `promtool` before every deploy. CI also unit-tests them with `promtool test rules` against synthetic data, both when each alert must fire and when it must stay quiet.
+- They are checked by Prometheus' own `promtool` before every deploy.
 - Routing, grouping (by alert and service), repeat intervals (4 h) and inhibition (critical hides warning, and a collector outage hides "service stopped sending telemetry") are standard Alertmanager configuration.
 - The Raion server reads alerts from Alertmanager's API through the gateway. The stack never connects to Raion.
 

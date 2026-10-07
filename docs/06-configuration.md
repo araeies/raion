@@ -1,6 +1,8 @@
-# Configuration reference
+# Describing your services
 
-Raion is configured with YAML files in a **workspace** folder. Every document starts with:
+You describe what Raion observes in YAML files in a **workspace** folder. This page lists every option. Run `raion validate` after each change: it checks every field, explains mistakes with the file and line, and suggests fixes.
+
+Every document starts with:
 
 ```yaml
 apiVersion: raion/v1alpha1
@@ -32,7 +34,7 @@ spec:
   level: 3 # 1 basic | 2 production | 3 SRE        (default 1)
   environment: production # one environment per workspace          (default production)
   target:
-    type: docker-compose # the only target today
+    type: docker-compose # Raion deploys the stack with Docker Compose
     compose:
       projectName: raion # Docker Compose project name           (default raion)
       gatewayPort: 7601 # loopback port of the Raion gateway    (default 7601)
@@ -77,7 +79,7 @@ spec:
         reason: The DBA team monitors it # required
 ```
 
-See [Observability Advisor](advisor.md) for the rules and their subjects.
+See [The Advisor](12-advisor.md) for the rules and their subjects.
 
 ### Secrets
 
@@ -88,29 +90,35 @@ Configuration files are meant for Git, so they never contain secrets. Fields tha
 
 An inline value such as a Slack webhook URL is rejected with error `RAI-E004`.
 
-### Features and levels
+### Levels and features
 
-| Feature                  | Level | What it adds                                                     |
-| ------------------------ | ----- | ---------------------------------------------------------------- |
-| `logs`                   | 1     | Collect application logs                                         |
-| `hostMetrics`            | 1     | CPU, memory, disk and network for the host                       |
-| `httpMetrics`            | 1     | Request rate, error rate and latency for HTTP services           |
-| `basicAlerts`            | 1     | Alerts for errors, latency, missing telemetry and host resources |
-| `basicDashboards`        | 1     | Overview, service and infrastructure dashboards                  |
-| `traces`                 | 2     | Distributed tracing                                              |
-| `traceLogCorrelation`    | 2     | Link logs and traces via trace and span IDs                      |
-| `serviceGraph`           | 2     | Service dependency map derived from traces                       |
-| `goldenSignalDashboards` | 2     | Golden-signal and RED dashboards per service                     |
-| `databaseMonitoring`     | 2     | Database integrations                                            |
-| `slos`                   | 3     | SLIs, SLOs, error budgets and burn-rate alerts                   |
-| `ownershipRouting`       | 3     | Route alerts to the owning team                                  |
-| `runbookLinks`           | 3     | Attach runbook links to alerts and SLOs                          |
+A level turns on a set of features. To turn one feature on or off without changing the level, use `features` in the workspace or in a service:
+
+| Feature               | On from level | What it does                                                                                   |
+| --------------------- | ------------- | ---------------------------------------------------------------------------------------------- |
+| `logs`                | 1             | Collect the service's logs                                                                     |
+| `basicAlerts`         | 1             | Generate alerts for the service (errors, latency, missing telemetry, unreachable) and the host |
+| `traces`              | 2             | Collect distributed traces; logs written during a request then carry its trace ID              |
+| `serviceGraph`        | 2             | Build the service map and dependency panels from traces                                        |
+| `traceLogCorrelation` | 2             | Expect logs to be linked to traces: the Advisor reports services whose logs are not            |
+| `slos`                | 3             | Evaluate SLOs: error budgets, burn-rate alerts, SLO dashboards                                 |
+| `ownershipRouting`    | 3             | Send each team's alerts to the team's receiver (`teams[].route`)                               |
 
 Each feature is resolved in this order, with later entries overriding earlier ones:
 
 1. the level preset (the service's `level`, or the workspace level)
 2. workspace `features`
 3. service `features`
+
+Some things do not depend on features:
+
+- Host metrics: `infrastructure.host`.
+- Container metrics: `infrastructure.containers`.
+- HTTP metrics and the dashboards built from them: the service's integration.
+- Database monitoring: the database's integration.
+- Runbook links: added to alerts whenever `runbooks` is set.
+
+The schema also accepts the feature names `hostMetrics`, `httpMetrics`, `basicDashboards`, `goldenSignalDashboards`, `databaseMonitoring` and `runbookLinks`; setting them has no effect.
 
 ## Service
 
@@ -170,11 +178,11 @@ integrations:
       password: ${secret:ORDERS_DB_MONITOR_PASSWORD}
 ```
 
-See [Integrations](integrations.md) for every integration and its parameters. A workspace can also contain its own packages in `integrations/<name>/`, pinned in `integrations.lock.yaml` ([Writing integrations](writing-integrations.md)).
+See [Integrations](integrations/README.md) for every integration and its parameters. A workspace can also contain its own packages in `integrations/<name>/`, pinned in `integrations.lock.yaml` ([Writing integrations](integrations/writing-integrations.md)).
 
 ### Container logs
 
-`containerLogs: true` collects what a Compose container writes to stdout and stderr, for services that do not send logs themselves, such as Nginx or PostgreSQL. `raion connect` sets the container's logging driver; see [Integrations](integrations.md#container-logs).
+`containerLogs: true` collects what a Compose container writes to stdout and stderr, for services that do not send logs themselves, such as Nginx or PostgreSQL. `raion connect` sets the container's logging driver; see [Docker containers](integrations/docker.md#container-logs).
 
 ### Alerts
 
@@ -189,7 +197,7 @@ alerts:
   enabled: true
 ```
 
-Where alerts go is set under `spec.notifications` (`receivers`, `defaultReceiver`) and `spec.teams[].route`. See [Alerting](alerting.md).
+Where alerts go is set under `spec.notifications` (`receivers`, `defaultReceiver`) and `spec.teams[].route`. See [Alerts and notifications](09-alerts.md).
 
 ## SLO
 
@@ -217,6 +225,6 @@ spec:
 
 The **error budget** is `100% - target`. For example, a 99.9% objective over 30 days allows 0.1% of requests to fail, roughly 43 minutes of complete outage.
 
-An optional `policy` says what the team does when the budget is spent; it is shown with the SLO and in its alerts. See [SLOs](slos.md) for burn-rate alerts, dashboards and OpenSLO.
+An optional `policy` says what the team does when the budget is spent; it is shown with the SLO and in its alerts. See [SLOs and error budgets](10-slos.md) for burn-rate alerts, dashboards and OpenSLO.
 
 SLOs are deployed when the `slos` feature is enabled (level 3). Below level 3 they are validated and kept, but you get warning `RAI-W101`.
