@@ -25,7 +25,7 @@ import {
   type DeploymentTarget,
   type RuntimeStatus,
 } from './target.js';
-import { validateWithTools, type ToolCheck } from './tools.js';
+import { ImagePullError, pullMissingImages, validateWithTools, type ToolCheck } from './tools.js';
 
 interface ComposePsEntry {
   Service: string;
@@ -179,6 +179,14 @@ export class DockerComposeTarget implements DeploymentTarget {
         secretsFingerprint = materializeSecrets(this.paths, bundle);
       } catch (error) {
         if (error instanceof SecretError) throw new ApplyError(error.message);
+        throw error;
+      }
+      try {
+        const pulled = await pullMissingImages(this.runner, bundle, log);
+        if (pulled.length > 0) log(`Downloaded ${pulled.length} image(s).`);
+      } catch (error) {
+        if (error instanceof ImagePullError)
+          throw new ApplyError(`${error.message}\nNothing was changed.`);
         throw error;
       }
       let toolChecks: ToolCheck[] = [];

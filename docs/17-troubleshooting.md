@@ -37,13 +37,14 @@ Find your symptom below. Most commands explain their own errors, with the file a
 
 ## Deploying
 
-| Symptom                                                          | What to do                                                                                                                                     |
-| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `generated configuration was rejected by …`                      | Nothing was changed. The message contains the component's own output. This should not happen: please [report it](../CONTRIBUTING.md).          |
-| `components did not become ready … Rolled back to release …`     | Your previous configuration is running again. The output includes the last log lines of the failing component; `raion status` shows the state. |
-| `apply already in progress by …`                                 | Someone else is deploying. Wait; if their process crashed, the lock is released automatically after 30 minutes.                                |
-| `raion apply` says a secret is missing                           | Set it: `raion secrets set NAME`, or on **Observability stack → Secrets**. For `${env:NAME}`, set the environment variable.                    |
-| The plan asks for `--allow-privileged` or `--allow-data-changes` | The change needs elevated privileges or deletes data. Review it, then approve with the flag (an admin in the web UI).                          |
+| Symptom                                                          | What to do                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `could not download …` or `downloading … did not finish`         | The first `apply` on a machine downloads the components' images (over 1 GB). Check the internet connection, and Docker's proxy settings (Docker Desktop: _Settings → Resources → Proxies_). Run `apply` again: images already downloaded are kept. Nothing was changed. |
+| `generated configuration was rejected by …`                      | Nothing was changed. The message contains the component's own output. This should not happen: please [report it](../CONTRIBUTING.md).                                                                                                                                   |
+| `components did not become ready … Rolled back to release …`     | Your previous configuration is running again. The output includes the last log lines of the failing component; `raion status` shows the state.                                                                                                                          |
+| `apply already in progress by …`                                 | Someone else is deploying. Wait; if their process crashed, the lock is released automatically after 30 minutes.                                                                                                                                                         |
+| `raion apply` says a secret is missing                           | Set it: `raion secrets set NAME`, or on **Observability stack → Secrets**. For `${env:NAME}`, set the environment variable.                                                                                                                                             |
+| The plan asks for `--allow-privileged` or `--allow-data-changes` | The change needs elevated privileges or deletes data. Review it, then approve with the flag (an admin in the web UI).                                                                                                                                                   |
 
 ## Services and telemetry
 

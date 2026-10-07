@@ -322,3 +322,80 @@ describe('DockerComposeTarget', () => {
     );
   });
 });
+
+describe('first run on a new machine', () => {
+  /** A machine with no images yet; pulling either works or fails. */
+  class EmptyDocker extends FakeDocker {
+    present = new Set<string>();
+    pullFails = false;
+    override run(args: string[]): Promise<ExecResult> {
+      if (args[0] === 'image' && args[1] === 'inspect') {
+        this.calls.push(args);
+        const found = this.present.has(args.at(-1)!);
+        return Promise.resolve({
+          stdout: '',
+          stderr: found ? '' : 'No such image',
+          code: found ? 0 : 1,
+        });
+      }
+      if (args[0] === 'pull') {
+        this.calls.push(args);
+        if (this.pullFails) {
+          return Promise.resolve({
+            stdout: '',
+            stderr:
+              'Error response from daemon: Get "https://registry-1.docker.io/v2/": dial tcp: i/o timeout',
+            code: 1,
+          });
+        }
+        this.present.add(args.at(-1)!);
+        return Promise.resolve({ stdout: args.at(-1)!, stderr: '', code: 0 });
+      }
+      return super.run(args);
+    }
+  }
+
+  it('downloads missing images one at a time before validating', async () => {
+    const gw = await fakeGateway(() => true);
+    try {
+      const ws = workspace('', gw.port);
+      const docker = new EmptyDocker();
+      const log: string[] = [];
+      const target = new DockerComposeTarget(dir, ws, docker, portsFree);
+      await target.apply(generateRuntime(ws), {
+        actor: 'test',
+        readinessTimeoutMs: 5000,
+        onProgress: (m: string) => log.push(m),
+      });
+      const pulls = docker.calls.filter((c) => c[0] === 'pull');
+      expect(pulls.length).toBeGreaterThan(5);
+      const firstValidation = docker.calls.findIndex((c) => c[0] === 'run');
+      const lastPull = docker.calls.findLastIndex((c) => c[0] === 'pull');
+      expect(lastPull).toBeLessThan(firstValidation);
+      expect(log.some((m) => /^Downloading image 1 of \d+: /.test(m))).toBe(true);
+
+      // The next apply finds them all and downloads nothing.
+      docker.calls = [];
+      await target.apply(generateRuntime(ws), { actor: 'test', readinessTimeoutMs: 5000 });
+      expect(docker.calls.some((c) => c[0] === 'pull')).toBe(false);
+    } finally {
+      gw.server.close();
+    }
+  });
+
+  it('stops with a clear message when an image cannot be downloaded', async () => {
+    const ws = workspace();
+    const docker = new EmptyDocker();
+    docker.pullFails = true;
+    const target = new DockerComposeTarget(dir, ws, docker, portsFree);
+    const error = await target
+      .apply(generateRuntime(ws), { actor: 'test' })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApplyError);
+    expect((error as Error).message).toMatch(/could not download .*\n.*i\/o timeout/s);
+    expect((error as Error).message).toMatch(/Docker Hub/);
+    expect((error as Error).message).toMatch(/Nothing was changed/);
+    // Nothing was validated or started.
+    expect(docker.calls.some((c) => c[0] === 'run' || c.includes('up'))).toBe(false);
+  });
+});

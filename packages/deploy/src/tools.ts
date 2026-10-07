@@ -73,6 +73,45 @@ function checks(paths: StatePaths, staging: string): CheckSpec[] {
   ];
 }
 
+/** How long one image may take to download: a first run fetches over a gigabyte in total. */
+const PULL_TIMEOUT_MS = 20 * 60_000;
+
+export class ImagePullError extends Error {}
+
+/**
+ * Downloads the images of `bundle` that are not on this machine yet, one at a time, so that a
+ * first run shows its progress and no later step (validation, start-up) is cut short by a
+ * download.
+ */
+export async function pullMissingImages(
+  runner: Runner,
+  bundle: RuntimeBundle,
+  log: (message: string) => void,
+): Promise<string[]> {
+  const images = [...new Set(bundle.components.map((c) => imageRef(c.id)))];
+  const missing: string[] = [];
+  for (const image of images) {
+    const inspect = await runner.run(['image', 'inspect', '--format', '{{.Id}}', image], {
+      timeoutMs: 30_000,
+    });
+    if (inspect.code !== 0) missing.push(image);
+  }
+  for (const [i, image] of missing.entries()) {
+    const name = image.split('@')[0]!;
+    log(`Downloading image ${i + 1} of ${missing.length}: ${name}…`);
+    const result = await runner.run(['pull', '--quiet', image], { timeoutMs: PULL_TIMEOUT_MS });
+    if (result.code !== 0) {
+      const detail = (result.stderr || result.stdout).trim().split('\n').slice(-4).join('\n    ');
+      throw new ImagePullError(
+        result.code === 124
+          ? `downloading ${name} did not finish within ${PULL_TIMEOUT_MS / 60_000} minutes. Check your internet connection, then run apply again: images already downloaded are kept.`
+          : `could not download ${name}:\n    ${detail}\nCheck that Docker can reach Docker Hub (internet connection, proxy or firewall settings, Docker Hub download limits), then run apply again.`,
+      );
+    }
+  }
+  return missing;
+}
+
 /**
  * Validates generated configuration with the real tools (in their pinned images, without
  * network access). Catches anything the generators got wrong before it reaches the runtime.
@@ -115,7 +154,10 @@ export async function validateWithTools(
             component: c.component,
             tool: c.tool,
             ok: result.code === 0,
-            output: (result.stderr || result.stdout).trim().split('\n').slice(-10).join('\n'),
+            output:
+              result.code === 124
+                ? 'the check did not finish within 3 minutes (is Docker overloaded or still downloading?)'
+                : (result.stderr || result.stdout).trim().split('\n').slice(-10).join('\n'),
           };
         }),
     );
