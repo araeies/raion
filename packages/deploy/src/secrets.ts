@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import type { RuntimeBundle } from '@raion/core';
+import { parseSecretRef } from '@raion/schema';
 import type { StatePaths } from './state.js';
 
 /** Names users can store: the NAME in ${secret:NAME}. Runtime-generated secrets are lowercase, so never clash. */
@@ -117,4 +118,27 @@ export function materializeSecrets(
       writeFileSync(file, value, { mode: 0o644 });
   }
   return fingerprintSecrets(paths, bundle, env) ?? '';
+}
+
+/**
+ * The value behind a ${secret:NAME} or ${env:NAME} reference, for Raion's own use (for
+ * example the single sign-on client secret). Throws when it is not set.
+ */
+export function resolveSecretRef(
+  paths: StatePaths,
+  ref: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const parsed = parseSecretRef(ref);
+  if (!parsed) throw new SecretError(`${ref} is not a secret reference`);
+  if (parsed.source === 'env') {
+    const value = env[parsed.key];
+    if (!value) throw new SecretError(`environment variable ${parsed.key} is not set`);
+    return value;
+  }
+  const file = paths.secret(parsed.key);
+  if (!existsSync(file)) {
+    throw new SecretError(`secret ${parsed.key} is not set; run "raion secrets set ${parsed.key}"`);
+  }
+  return readFileSync(file, 'utf8').replace(/\r?\n$/, '');
 }

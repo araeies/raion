@@ -68,6 +68,15 @@ describe('schema errors point at the right line', () => {
     expect(result.diagnostics[0]!.line).toBe(6);
   });
 
+  it('says what replaces a removed feature switch', () => {
+    const result = workspace('  features:\n    hostMetrics: false\n');
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics[0]!.message).toContain(
+      '"hostMetrics" is no longer a feature switch: host metrics are controlled by infrastructure.host',
+    );
+    expect(result.diagnostics[0]!.line).toBe(7);
+  });
+
   it('rejects inline secrets in receivers', () => {
     const result = workspace(
       '  notifications:\n    receivers:\n      - name: ops\n        type: slack\n        webhookUrl: https://hooks.slack.com/services/T000/B000/XXXX\n',
@@ -237,5 +246,26 @@ describe('cross-reference checks', () => {
     const result = workspace('  level: 1\n');
     expect(result.ok).toBe(true);
     expect(codes(result)).toEqual([CODES.NO_SERVICES]);
+  });
+});
+
+describe('type errors', () => {
+  it('say a field is required only when it is missing, and name the expected type otherwise', () => {
+    const missing = validateSources([
+      {
+        path: 'raion.yaml',
+        content:
+          'apiVersion: raion/v1alpha1\nkind: Workspace\nmetadata:\n  name: t\nspec:\n  services:\n    - type: api\n',
+      },
+    ]);
+    expect(missing.diagnostics[0]!.message).toBe('spec.services[0].name: this field is required');
+    const wrong = validateSources([
+      {
+        path: 'raion.yaml',
+        content:
+          'apiVersion: raion/v1alpha1\nkind: Workspace\nmetadata:\n  name: t\nspec:\n  services:\n    - name: shop\n      type: api\n      team: 5\n',
+      },
+    ]);
+    expect(wrong.diagnostics[0]!.message).toContain('expected string, received number');
   });
 });

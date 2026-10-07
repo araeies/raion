@@ -47,6 +47,11 @@ spec:
     traces: 3d
   server:
     publicUrl: http://127.0.0.1:7600 # the URL people use to open Raion; Grafana is served under /grafana/
+    sso: # optional: sign in with your identity provider, see "Single sign-on" below
+      oidc:
+        issuer: https://login.example.com/realms/acme
+        clientId: raion
+        clientSecret: ${secret:OIDC_CLIENT_SECRET}
   infrastructure:
     host: true # host metrics via node_exporter          (default true)
     containers: false # container metrics via cAdvisor; needs elevated privileges (default false)
@@ -90,6 +95,23 @@ Configuration files are meant for Git, so they never contain secrets. Fields tha
 
 An inline value such as a Slack webhook URL is rejected with error `RAI-E004`.
 
+### Single sign-on
+
+`server.sso.oidc` lets people sign in with an OpenID Connect identity provider. `raion server` reads it when it starts, so restart it after a change. See [Single sign-on](15-users-and-security.md#single-sign-on) for the setup steps.
+
+| Setting                                       | Default                    | What it does                                                                                                                                  |
+| --------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `issuer`                                      | required                   | The provider's issuer URL. Raion reads `<issuer>/.well-known/openid-configuration`. Must be `https://` unless the provider is on this machine |
+| `clientId`                                    | required                   | The client ID of Raion's registration at the provider                                                                                         |
+| `clientSecret`                                | required                   | The client secret, as `${secret:NAME}` or `${env:NAME}` only                                                                                  |
+| `displayName`                                 | `Single sign-on`           | The label of the button: **Sign in with …**                                                                                                   |
+| `scopes`                                      | `[openid, profile, email]` | Scopes to ask for. Add the one your provider needs to include groups, for example `groups`                                                    |
+| `usernameClaim`                               | `preferred_username`       | The claim used as the Raion username; falls back to the email address, then the subject                                                       |
+| `roles.claim`                                 | `groups`                   | The claim that lists the person's groups                                                                                                      |
+| `roles.admin`, `roles.editor`, `roles.viewer` | `[]`                       | Groups that get each role. The highest match wins                                                                                             |
+| `roles.default`                               | none                       | The role for people in none of the groups. Without it, they cannot sign in                                                                    |
+| `passwordLogin`                               | `true`                     | Keep sign-in with a Raion password available. `false` allows single sign-on only                                                              |
+
 ### Levels and features
 
 A level turns on a set of features. To turn one feature on or off without changing the level, use `features` in the workspace or in a service:
@@ -117,8 +139,6 @@ Some things do not depend on features:
 - HTTP metrics and the dashboards built from them: the service's integration.
 - Database monitoring: the database's integration.
 - Runbook links: added to alerts whenever `runbooks` is set.
-
-The schema also accepts the feature names `hostMetrics`, `httpMetrics`, `basicDashboards`, `goldenSignalDashboards`, `databaseMonitoring` and `runbookLinks`; setting them has no effect.
 
 ## Service
 

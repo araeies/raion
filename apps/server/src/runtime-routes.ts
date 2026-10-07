@@ -258,6 +258,25 @@ export function registerRuntimeRoutes(
           description: manifest.spec.description,
           languages: manifest.spec.languages,
           capabilities: manifest.spec.capabilities.map((c) => c.id),
+          // How telemetry arrives: the application sends it, or the collector reads it.
+          collects: manifest.spec.collector ? 'pull' : 'push',
+          parameters: Object.entries(manifest.spec.parameters).map(([param, p]) => ({
+            name: param,
+            type: p.type,
+            description: p.description,
+            required: p.type !== 'boolean' && p.required,
+            ...(p.type === 'string' ? { format: p.format } : {}),
+            ...('default' in p && p.default !== undefined ? { default: p.default } : {}),
+          })),
+          requirements: manifest.spec.requirements.map((r) => ({
+            kind: r.kind,
+            description: r.description,
+            ...(r.kind === 'packages' ? { packages: r.packages, manager: r.manager } : {}),
+          })),
+          // Services of this workspace that use it.
+          services: (ctx?.workspace.services ?? [])
+            .filter((svc) => svc.integrations.some((i) => i.name === n))
+            .map((svc) => svc.name),
           docs,
         };
       }),

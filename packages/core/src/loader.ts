@@ -278,7 +278,8 @@ function pushSchemaIssues(
     let message = issue.message;
     if (issue.code === 'unrecognized_keys') {
       message = `unknown field${issue.keys.length > 1 ? 's' : ''}: ${issue.keys.join(', ')}`;
-    } else if (issue.code === 'invalid_type' && issue.input === undefined) {
+    } else if (issue.code === 'invalid_type' && /received undefined$/.test(issue.message)) {
+      // Zod does not report the input value, but its default message says what was received.
       message = 'this field is required';
     }
     const where = path.length > 0 ? `${formatPath(path)}: ` : '';

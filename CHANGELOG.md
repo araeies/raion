@@ -37,8 +37,12 @@ The first release of Raion.
 
 ### Web UI and access
 
-- Pages for services, SLOs, alerts, the Advisor and the observability stack; user management for admins.
-- Personal accounts with viewer, editor and admin roles, an audit log, and single sign-on into Grafana.
+- Pages for services, SLOs, alerts, the Advisor, integrations and the observability stack; user management and an audit log page for admins.
+- Personal accounts with viewer, editor and admin roles, and single sign-on into Grafana.
+- An account page to change your password; admins reset other people's passwords from the Users page.
+- Single sign-on with any OpenID Connect identity provider (Entra ID, Google, Okta, Keycloak, …): accounts created at first sign-in, roles mapped from groups, and optional password sign-in.
+- Personal API tokens for scripts: limited to a role, always expiring, revocable, and audited by name.
+- An audit log of sign-ins, account, token and secret changes, deployments, silences, SLOs and advisor fixes, filterable by person and action.
 - Secure defaults: loopback-only unless served over HTTPS, CSRF and DNS-rebinding protection, a strict Content-Security-Policy.
 
 ### Working through Git

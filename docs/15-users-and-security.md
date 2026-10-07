@@ -35,8 +35,9 @@ On **Users**, an admin changes a role from the list, or clicks **Disable** (and 
 ### Passwords
 
 - At least 12 characters, and must not contain the username. Stored as scrypt hashes.
-- **Changing your own password** is done through the API; the web UI has no page for it. See [Changing a password](reference/api.md#changing-a-password).
-- **Resetting someone else's password** (admins) is also done through the API, with `PATCH /api/v1/users/<username>`. It signs that person out.
+- **Changing your own password:** click your username in the top bar, then **Change your password**. It signs you out everywhere else.
+- **Resetting someone else's password** (admins): on **Users**, click **Reset password** next to the account. It signs that person out; share the new password with them privately.
+- Accounts that use [single sign-on](#single-sign-on) have no Raion password; it is managed by the identity provider.
 
 ### Sign-in protection
 
@@ -46,7 +47,103 @@ On **Users**, an admin changes a role from the list, or clicks **Disable** (and 
 
 ### Audit log
 
-Raion records sign-ins (successful and failed), setup, user changes, password changes, secret changes (by name, never value), deployments, rollbacks, repairs, silences, SLO creation and advisor fixes, each with who did it. Admins read it through the API: `GET /api/v1/audit` ([HTTP API](reference/api.md)).
+Raion records sign-ins (successful and failed, with password or single sign-on), setup, user changes, password changes, API tokens created and revoked, secret changes (by name, never value), deployments, rollbacks, repairs, silences, SLO creation and advisor fixes, each with who did it. An action done with an API token also names the token.
+
+Admins read it on **Audit log** in the web UI, where they can filter by person and by kind of action, or through the API: `GET /api/v1/audit` ([HTTP API](reference/api.md#audit-log)).
+
+## Single sign-on
+
+People can sign in with your organization's identity provider instead of a Raion password. Any provider that supports OpenID Connect works, for example Microsoft Entra ID, Google, Okta, Keycloak, Auth0 or Authentik.
+
+### Setting it up
+
+1. **Register Raion at your identity provider** as a web application (a confidential client) using the authorization code flow. Set the redirect URI to your Raion address followed by `/api/v1/auth/oidc/callback`, for example `https://raion.example.com/api/v1/auth/oidc/callback`. The address is the one in `--public-url` (or `http://127.0.0.1:7600` when Raion runs on your machine). Note the **client ID** and **client secret**.
+2. **Store the client secret** in Raion's secret store (or provide it as an environment variable of `raion server`):
+
+   ```sh
+   raion secrets set OIDC_CLIENT_SECRET -w observability
+   ```
+
+3. **Add the provider to `raion.yaml`**:
+
+   ```yaml
+   spec:
+     server:
+       publicUrl: https://raion.example.com
+       sso:
+         oidc:
+           issuer: https://login.example.com/realms/acme
+           clientId: raion
+           clientSecret: ${secret:OIDC_CLIENT_SECRET}
+           displayName: Acme SSO
+           scopes: [openid, profile, email, groups]
+           roles:
+             claim: groups
+             admin: [platform-team]
+             editor: [developers]
+             viewer: [support]
+   ```
+
+4. **Restart `raion server`.** The sign-in page now shows **Sign in with Acme SSO**. If the client secret is missing, the server refuses to start and says which one.
+
+All settings are listed in [Configuration](06-configuration.md#single-sign-on).
+
+### Who gets in, with which role
+
+- The role comes from a claim of the ID token that lists the person's groups (`groups` by default). Many providers only include it when you ask for an extra scope, or after you configure a groups claim.
+- If the person is in groups for several roles, the highest one wins.
+- If the person is in none of the listed groups, they get the `default` role. **Without a `default`, they are refused**, so only the groups you list get in.
+- The role is read again at every sign-in, so removing someone from a group at the provider takes effect the next time they sign in. To cut someone off immediately, disable their account on **Users**, which also signs them out.
+
+### Accounts
+
+- An account is created the first time someone signs in. Its username comes from the `preferred_username` claim (or the claim you set in `usernameClaim`), else the part of the email address before the `@`, else the provider's subject, lowercased, with other characters replaced by `-`.
+- The account stays linked to the person at the provider, so it keeps working if their username there changes.
+- **Raion never takes over an existing account.** If a Raion account with the same username already exists, the sign-in is refused. Rename or remove the old account first.
+- Accounts that use single sign-on are marked **SSO** on **Users**. Their role and password are managed by the identity provider; admins can still disable them.
+
+### Password sign-in
+
+Password sign-in stays available next to single sign-on, so the first admin and an emergency admin account keep working if the identity provider is unavailable. To allow single sign-on only, set `passwordLogin: false`. Make sure at least one admin group is mapped before you do.
+
+### How it is protected
+
+- Authorization code flow with PKCE, a one-time state bound to the browser by a cookie, and a nonce checked in the ID token. ID tokens are validated by the [openid-client](https://github.com/panva/openid-client) library: signature, issuer, audience and expiry.
+- The provider must use HTTPS, except a provider on the same machine (for testing).
+- After sign-in, Raion only sends you on to a page on Raion itself.
+- The client secret is only accepted as a `${secret:…}` or `${env:…}` reference.
+
+## API tokens
+
+Scripts and automation use a personal API token instead of a password.
+
+### Creating one
+
+Click your username in the top bar, then under **API tokens**:
+
+1. Give it a name that says what it is for, for example `ci-deploy`.
+2. Choose its role. It can be lower than yours, never higher.
+3. Choose when it expires: 7 days, 30 days, 90 days or a year. Every token expires.
+4. Click **Create token** and copy it. **It is shown only once.** Raion stores only a hash of it.
+
+Use it in an `Authorization` header:
+
+```sh
+curl -H "Authorization: Bearer $RAION_TOKEN" https://raion.example.com/api/v1/slos
+```
+
+Requests with a token need no CSRF header. See the [HTTP API](reference/api.md#api-tokens).
+
+### What a token can do
+
+- It acts as you, with its own role or your current role, whichever is lower. If your role is lowered, your tokens are lowered too; if your account is disabled, they stop working.
+- It can do everything its role allows **except** manage accounts, passwords and tokens. Those always need a person who is signed in.
+- Everything done with a token is in the audit log under your name, with the token's name.
+- Each person can have up to 20 active tokens.
+
+### Revoking one
+
+Click **Revoke** next to the token on your account page. Admins see every active token on **Users** and can revoke any of them. A revoked or expired token is refused immediately.
 
 ## Secrets
 
@@ -143,6 +240,5 @@ raion server --host 0.0.0.0 --port 7600 \
 
 ## Limitations
 
-- Sign-in uses Raion's own accounts. Single sign-on with an external identity provider (Google, Entra ID, Okta, Keycloak) is not supported.
-- There are no personal API tokens. Scripts sign in with a username and password ([HTTP API](reference/api.md)).
-- Changing passwords and reading the audit log are available through the API only.
+- Single sign-on uses OpenID Connect. SAML providers are not supported directly; most can also offer OpenID Connect, or can sit behind a broker such as Keycloak.
+- People are added through single sign-on when they first sign in, not ahead of time, and Raion does not remove accounts when people leave your organization. Their sign-in stops working at the provider; disable the account on **Users** as well.

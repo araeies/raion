@@ -1,14 +1,14 @@
 # A tour of the web UI
 
-Open **<http://127.0.0.1:7600>** while `raion server` is running (see [First run](03-first-run.md)) and sign in.
+Open **<http://127.0.0.1:7600>** while `raion server` is running (see [First run](03-first-run.md)) and sign in, with your Raion username and password or, if your organization set it up, with **Sign in with …** ([single sign-on](15-users-and-security.md#single-sign-on)).
 
 The bar at the top is always there:
 
 - **Raion** (left): back to Services
 - your **workspace name**, environment and level
-- the menu: **Services**, **SLOs**, **Alerts**, **Advisor**, **Observability stack**, and **Users** for admins
+- the menu: **Services**, **SLOs**, **Alerts**, **Advisor**, **Integrations**, **Observability stack**, and **Users** and **Audit log** for admins
 - **Grafana ↗**: opens Grafana in a new tab, already signed in with a matching role
-- your **username and role**, and **Sign out**
+- your **username and role**, which opens [your account](#your-account), and **Sign out**
 
 What you can change depends on your role. Viewers see everything below; buttons that change something appear for editors and admins, and a few for admins only. See [roles](15-users-and-security.md#roles).
 
@@ -71,6 +71,21 @@ See [The Advisor](12-advisor.md).
 
 ---
 
+## Integrations
+
+Every integration Raion knows, as a card: what it monitors, whether the data is **Read by the collector** or **Sent by the application**, which languages it applies to, and how many of your services use it. Click one to open its page:
+
+- **What you get**: the signals and dashboards it provides
+- **Using it**: a ready-to-copy example for your workspace, with placeholders for the values you must fill in
+- **Setup** (part of **Using it**): what the application or system needs, for example a read-only monitoring user
+- **Parameters**: every setting, its type, whether it is required, its default, and which ones only accept a secret reference
+- **Services using it**: the services in your workspace that use it
+- **Documentation**: the integration's full guide
+
+See [Integrations](integrations/README.md).
+
+---
+
 ## Observability stack
 
 The state of the open-source components Raion runs for you.
@@ -95,11 +110,30 @@ See [Applying changes](13-applying-changes.md) and [Is Raion itself healthy?](16
 
 ---
 
+## Your account
+
+Click your username in the top bar.
+
+- **Change your password**: your current password, then the new one twice. Changing it signs you out everywhere else. People who sign in with single sign-on change their password at their identity provider instead.
+- **API tokens**: create a token for a script, choose its role (up to your own) and when it expires, and copy it; it is shown only once. The list shows each token's role, expiry, when it was last used, and **Revoke**. See [API tokens](15-users-and-security.md#api-tokens).
+
+---
+
 ## Users (admins)
 
-Every account, with its role and status. Change a role from the list, **Disable** or **Enable** an account, or **Add a user** with a username, an initial password and a role. Changing a role or disabling an account signs that person out immediately. Raion will not let you remove or demote the last active admin.
+Every account, with its role and status. Change a role from the list, **Disable** or **Enable** an account, **Reset password** for someone who forgot theirs (it signs them out; share the new password privately), or **Add a user** with a username, an initial password and a role. Changing a role or disabling an account signs that person out immediately. Raion will not let you remove or demote the last active admin.
+
+Accounts marked **SSO** sign in with single sign-on: their role comes from the identity provider at each sign-in, so it cannot be changed here, and they have no Raion password to reset. They can still be disabled.
+
+Below the accounts, **API tokens** lists every active token, with its owner, so an admin can revoke one that is no longer needed or may have leaked.
 
 See [Users, roles and security](15-users-and-security.md).
+
+---
+
+## Audit log (admins)
+
+Who did what, newest first: sign-ins (successful and failed), user and password changes, API tokens, secrets, deployments, silences, SLOs and advisor fixes. Each entry has the time, the person, the action, its target, the outcome, the IP address and details, for example which API token was used. Filter by person or by kind of action; **Show older entries** loads the next 100.
 
 ---
 

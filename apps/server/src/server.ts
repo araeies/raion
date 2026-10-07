@@ -3,11 +3,12 @@ import { isIP } from 'node:net';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadWorkspace } from '@raion/core';
-import { stateRoot } from '@raion/deploy';
+import { resolveSecretRef, StatePaths, stateRoot } from '@raion/deploy';
 import { buildApp } from './app.js';
 import { AlertInbox } from './inbox.js';
 import { RuntimeService } from './runtime.js';
 import { AuthService, DEFAULT_AUTH } from './auth.js';
+import { OidcService } from './oidc.js';
 import { Store } from './store.js';
 
 export interface ServerOptions {
@@ -104,6 +105,30 @@ export async function startServer(
       );
     }
   }
+  // Grafana links and single sign-on are configured in raion.yaml.
+  const ws = await loadWorkspace(workspaceDir);
+  let oidc: OidcService | undefined;
+  const oidcSettings = ws.workspace?.server.sso?.oidc;
+  if (oidcSettings) {
+    let clientSecret: string;
+    try {
+      clientSecret = resolveSecretRef(new StatePaths(workspaceDir), oidcSettings.clientSecret);
+    } catch (error) {
+      throw new ServerConfigError(
+        `single sign-on: the client secret ${oidcSettings.clientSecret} cannot be read: ${(error as Error).message}`,
+      );
+    }
+    try {
+      oidc = new OidcService(
+        oidcSettings,
+        clientSecret,
+        `${exposure.url}/api/v1/auth/oidc/callback`,
+      );
+    } catch (error) {
+      throw new ServerConfigError(`single sign-on: ${(error as Error).message}`);
+    }
+  }
+
   const store = new Store(join(stateRoot(workspaceDir), 'raion.db'));
   const auth = new AuthService(store, DEFAULT_AUTH);
 
@@ -121,12 +146,12 @@ export async function startServer(
     uiDir: options.uiDir ?? defaultUiDir(),
     logger: options.logger ?? true,
     ...(https ? { https } : {}),
+    ...(oidc ? { oidc } : {}),
   });
 
   await app.listen({ host: options.host, port: options.port });
 
   // Grafana builds its links from the workspace's server.publicUrl; warn when they disagree.
-  const ws = await loadWorkspace(workspaceDir);
   if (ws.workspace) {
     const configured = new URL(ws.workspace.server.publicUrl).origin;
     if (configured !== new URL(exposure.url).origin) {

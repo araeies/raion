@@ -47,6 +47,41 @@ const receiver = z.discriminatedUnion(
 
 const port = z.number().int().min(1024, 'use a port of 1024 or above').max(65535);
 
+const groupList = z.array(z.string().min(1).max(256)).default([]);
+
+/** OpenID Connect single sign-on (Google, Entra ID, Okta, Keycloak, …). */
+export const oidcSettings = z.strictObject({
+  /** The provider's issuer URL; its discovery document is read from here. */
+  issuer: z.url({ protocol: /^https?$/ }),
+  clientId: z.string().min(1).max(512),
+  /** A credential: only a ${secret:NAME} or ${env:NAME} reference is accepted. */
+  clientSecret: secretRef,
+  /** Label of the sign-in button. */
+  displayName: z.string().min(1).max(64).default('Single sign-on'),
+  scopes: z
+    .array(z.string().regex(/^[A-Za-z0-9_.:/-]{1,128}$/, 'must be a scope name such as "groups"'))
+    .default(['openid', 'profile', 'email']),
+  /** Claim used as the Raion username (falls back to email, then the subject). */
+  usernameClaim: z.string().min(1).max(64).default('preferred_username'),
+  /**
+   * Who gets which Raion role, from a claim listing the person's groups. The highest matching
+   * role wins. Without a match, "default" applies; with no default, sign-in is refused.
+   */
+  roles: z
+    .strictObject({
+      claim: z.string().min(1).max(64).default('groups'),
+      admin: groupList,
+      editor: groupList,
+      viewer: groupList,
+      default: z.enum(['viewer', 'editor', 'admin']).optional(),
+    })
+    .prefault({}),
+  /** Keep password sign-in available next to single sign-on (useful as a fallback). */
+  passwordLogin: z.boolean().default(true),
+});
+
+export type OidcSettings = z.output<typeof oidcSettings>;
+
 const retention = z.strictObject({
   /** Raised automatically to cover the longest SLO window. */
   metrics: duration.default('15d'),
@@ -98,6 +133,8 @@ export const workspaceSpec = z.strictObject({
     .strictObject({
       /** The URL people use to open Raion. Grafana is served under <publicUrl>/grafana/. */
       publicUrl: z.url({ protocol: /^https?$/ }).default('http://127.0.0.1:7600'),
+      /** Sign-in with your organization's identity provider. */
+      sso: z.strictObject({ oidc: oidcSettings }).optional(),
     })
     .prefault({}),
   infrastructure: z

@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { api, type User } from './api';
 import { LoginPage, SetupPage, readSetupToken } from './pages/Auth';
+import { AccountPage } from './pages/Account';
 import { AdvisorPage } from './pages/Advisor';
 import { AlertsPage } from './pages/Alerts';
+import { AuditPage } from './pages/Audit';
+import { MyTokens } from './pages/Tokens';
+import { IntegrationDetailPage, IntegrationsPage } from './pages/Integrations';
 import { RuntimePage } from './pages/Runtime';
 import { SlosPage } from './pages/Slos';
 import { ServiceDetailPage, ServicesPage } from './pages/Services';
@@ -73,14 +77,24 @@ function Shell({ user, path, onSignOut }: { user: User; path: string; onSignOut:
     onSignOut();
   };
   const serviceMatch = /^\/services\/([a-z0-9-]+)$/.exec(path);
+  const integrationMatch = /^\/integrations\/([a-z0-9-]+)$/.exec(path);
 
   let page;
   if (serviceMatch) page = <ServiceDetailPage name={serviceMatch[1]!} user={user} />;
+  else if (integrationMatch) page = <IntegrationDetailPage name={integrationMatch[1]!} />;
+  else if (path === '/integrations') page = <IntegrationsPage />;
   else if (path === '/users' && user.role === 'admin') page = <UsersPage currentUser={user} />;
   else if (path === '/runtime') page = <RuntimePage user={user} />;
   else if (path === '/alerts') page = <AlertsPage user={user} />;
   else if (path === '/slos') page = <SlosPage user={user} />;
   else if (path === '/advisor') page = <AdvisorPage user={user} />;
+  else if (path === '/account')
+    page = (
+      <AccountPage user={user}>
+        <MyTokens user={user} />
+      </AccountPage>
+    );
+  else if (path === '/audit' && user.role === 'admin') page = <AuditPage />;
   else page = <ServicesPage />;
 
   const nav = [
@@ -88,8 +102,10 @@ function Shell({ user, path, onSignOut }: { user: User; path: string; onSignOut:
     { href: '/slos', label: 'SLOs', show: true },
     { href: '/alerts', label: 'Alerts', show: true },
     { href: '/advisor', label: 'Advisor', show: true },
+    { href: '/integrations', label: 'Integrations', show: true },
     { href: '/runtime', label: 'Observability stack', show: true },
     { href: '/users', label: 'Users', show: user.role === 'admin' },
+    { href: '/audit', label: 'Audit log', show: user.role === 'admin' },
   ];
 
   return (
@@ -131,9 +147,15 @@ function Shell({ user, path, onSignOut }: { user: User; path: string; onSignOut:
         <a className="external" href="/grafana/" target="_blank" rel="noopener">
           Grafana ↗
         </a>
-        <span className="user">
+        <a
+          className="user"
+          href="/account"
+          onClick={linkHandler('/account')}
+          aria-current={path === '/account' ? 'page' : undefined}
+          title="Your account: password and API tokens"
+        >
           {user.username} <span className="badge">{user.role}</span>
-        </span>
+        </a>
         <button type="button" className="secondary" onClick={() => void signOut()}>
           Sign out
         </button>

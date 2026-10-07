@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { AuthService, DEFAULT_AUTH } from '../src/auth.js';
 import { resolveExposure, ServerConfigError } from '../src/server.js';
@@ -284,6 +284,21 @@ describe('roles', () => {
       'setup:success',
     ]);
   });
+
+  it('filters the audit trail by person and by kind of action', async () => {
+    const admin = await setupAdmin();
+    await createUser(admin, 'val', 'viewer');
+    const actions = async (query: string) =>
+      (await request('GET', `/api/v1/audit?${query}`, { cookie: admin }))
+        .json<{ entries: { action: string; actor: string | null }[] }>()
+        .entries.map((e) => `${e.actor}:${e.action}`);
+    // "user" matches user.create but not, for example, a hypothetical "users" action.
+    expect(await actions('action=user')).toEqual(['admin:user.create']);
+    expect(await actions('actor=val')).toEqual(['val:login']);
+    expect((await request('GET', '/api/v1/audit?action=x%25', { cookie: admin })).statusCode).toBe(
+      400,
+    );
+  });
 });
 
 describe('workspace API', () => {
@@ -359,4 +374,128 @@ describe('network exposure', () => {
       url: 'https://raion.example.com',
     });
   });
+});
+
+describe('personal API tokens', () => {
+  const bearer = (
+    token: string,
+    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    url: string,
+    body?: unknown,
+  ) =>
+    app.inject({
+      method,
+      url,
+      // No CSRF header and no cookie: a script, not a browser.
+      headers: { host: HOST, authorization: `Bearer ${token}` },
+      ...(body !== undefined ? { payload: body as object } : {}),
+    });
+
+  async function createToken(cookie: string, role: string, name = 'ci') {
+    const res = await request('POST', '/api/v1/tokens', {
+      cookie,
+      body: { name, role, expiresInDays: 30 },
+    });
+    return res;
+  }
+
+  it('is shown once, works without a session or CSRF header, and is audited with its name', async () => {
+    const admin = await setupAdmin();
+    const editor = await createUser(admin, 'erin', 'editor');
+    const created = await createToken(editor, 'editor', 'deploy-bot');
+    expect(created.statusCode).toBe(201);
+    const { token } = created.json<{ token: string }>();
+    expect(token).toMatch(/^raion_[0-9a-f]{16}_[A-Za-z0-9_-]{43}$/);
+
+    const list = await request('GET', '/api/v1/tokens', { cookie: editor });
+    expect(list.body).not.toContain(token.split('_')[2]);
+    expect(list.json<{ tokens: { name: string }[] }>().tokens.map((t) => t.name)).toEqual([
+      'deploy-bot',
+    ]);
+
+    expect((await bearer(token, 'GET', '/api/v1/services')).statusCode).toBe(200);
+    // A write without the CSRF header passes authentication (the finding simply does not exist).
+    const write = await bearer(token, 'POST', '/api/v1/advisor/apply', { id: 'none/none' });
+    expect(write.statusCode).toBe(409);
+
+    const created2 = await request('GET', '/api/v1/audit?action=token', { cookie: admin });
+    expect(
+      created2.json<{ entries: { actor: string; target: string }[] }>().entries[0],
+    ).toMatchObject({
+      actor: 'erin',
+      target: 'deploy-bot',
+    });
+  });
+
+  it('never has more rights than its owner has now', async () => {
+    const admin = await setupAdmin();
+    const viewer = await createUser(admin, 'vic', 'viewer');
+    expect((await createToken(viewer, 'admin')).statusCode).toBe(400);
+
+    const sam = await createUser(admin, 'sam', 'admin');
+    const { token } = (await createToken(sam, 'admin')).json<{ token: string }>();
+    expect((await bearer(token, 'GET', '/api/v1/audit')).statusCode).toBe(200);
+    await request('PATCH', '/api/v1/users/sam', { cookie: admin, body: { role: 'viewer' } });
+    expect((await bearer(token, 'GET', '/api/v1/audit')).statusCode).toBe(403);
+    expect((await bearer(token, 'GET', '/api/v1/services')).statusCode).toBe(200);
+
+    await request('PATCH', '/api/v1/users/sam', { cookie: admin, body: { disabled: true } });
+    expect((await bearer(token, 'GET', '/api/v1/services')).statusCode).toBe(401);
+  });
+
+  it('cannot manage accounts or tokens', async () => {
+    const admin = await setupAdmin();
+    const { token } = (await createToken(admin, 'admin')).json<{ token: string }>();
+    for (const [method, url, body] of [
+      ['POST', '/api/v1/tokens', { name: 'x', role: 'viewer', expiresInDays: 1 }],
+      ['GET', '/api/v1/tokens', undefined],
+      [
+        'POST',
+        '/api/v1/users',
+        { username: 'mallory', password: 'long-enough-password', role: 'admin' },
+      ],
+      ['PATCH', '/api/v1/users/admin', { password: 'another-long-password' }],
+      ['POST', '/api/v1/auth/password', { currentPassword: 'x', newPassword: 'y-long-enough-pw' }],
+    ] as const) {
+      const res = await bearer(token, method, url, body);
+      expect(res.statusCode, `${method} ${url}`).toBe(403);
+      expect(res.json<{ error: { code: string } }>().error.code).toBe('session_required');
+    }
+  });
+
+  it('stops working when revoked or expired, and a bad token is never ignored', async () => {
+    const admin = await setupAdmin();
+    const valid = await setupSecondToken(admin);
+    const revoked = (await createToken(admin, 'viewer', 'old')).json<{
+      token: string;
+      record: { id: string };
+    }>();
+    const del = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/tokens/${revoked.record.id}`,
+      headers: { host: HOST, cookie: admin, 'x-raion-csrf': '1' },
+    });
+    expect(del.statusCode).toBe(204);
+    expect((await bearer(revoked.token, 'GET', '/api/v1/services')).statusCode).toBe(401);
+
+    // A malformed or wrong token is rejected even when a valid session cookie is also sent.
+    const mixed = await app.inject({
+      method: 'GET',
+      url: '/api/v1/services',
+      headers: { host: HOST, cookie: admin, authorization: `Bearer ${valid.slice(0, -1)}x` },
+    });
+    expect(mixed.statusCode).toBe(401);
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(Date.now() + 31 * 86_400_000);
+      expect((await bearer(valid, 'GET', '/api/v1/services')).statusCode).toBe(401);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  async function setupSecondToken(cookie: string): Promise<string> {
+    return (await createToken(cookie, 'viewer', 'reader')).json<{ token: string }>().token;
+  }
 });

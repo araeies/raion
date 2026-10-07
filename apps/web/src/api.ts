@@ -6,6 +6,13 @@ export interface User {
   role: Role;
   disabled: boolean;
   createdAt: string;
+  /** Signs in with single sign-on; the identity provider decides role and password. */
+  sso?: boolean;
+}
+
+export interface SignInMethods {
+  password: boolean;
+  sso: { displayName: string } | null;
 }
 
 export interface Diagnostic {
@@ -118,6 +125,7 @@ export const api = {
   setupStatus: () => call<{ needed: boolean }>('GET', '/api/v1/setup'),
   setup: (token: string, username: string, password: string) =>
     call<{ user: User }>('POST', '/api/v1/setup', { token, username, password }),
+  signInMethods: () => call<SignInMethods>('GET', '/api/v1/auth/methods'),
   login: (username: string, password: string) =>
     call<{ user: User }>('POST', '/api/v1/auth/login', { username, password }),
   logout: () => call<undefined>('POST', '/api/v1/auth/logout'),
@@ -133,9 +141,29 @@ export const api = {
   users: () => call<{ users: User[] }>('GET', '/api/v1/users'),
   createUser: (username: string, password: string, role: Role) =>
     call<{ user: User }>('POST', '/api/v1/users', { username, password, role }),
-  updateUser: (username: string, changes: { role?: Role; disabled?: boolean }) =>
+  updateUser: (username: string, changes: { role?: Role; disabled?: boolean; password?: string }) =>
     call<{ user: User }>('PATCH', `/api/v1/users/${encodeURIComponent(username)}`, changes),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    call<undefined>('POST', '/api/v1/auth/password', { currentPassword, newPassword }),
+  audit: (query: { before?: number; actor?: string; action?: string }) => {
+    const params = new URLSearchParams({ limit: '100' });
+    if (query.before) params.set('before', String(query.before));
+    if (query.actor) params.set('actor', query.actor);
+    if (query.action) params.set('action', query.action);
+    return call<{ entries: AuditEntry[] }>('GET', `/api/v1/audit?${params.toString()}`);
+  },
 };
+
+export interface AuditEntry {
+  id: number;
+  ts: string;
+  actor: string | null;
+  action: string;
+  target: string | null;
+  outcome: 'success' | 'failure';
+  ip: string | null;
+  details: Record<string, unknown> | null;
+}
 
 export interface ComponentStatus {
   component: string;
@@ -394,4 +422,56 @@ export const advisorApi = {
     call<{ id: string; summary: string; files: string[] }>('POST', '/api/v1/advisor/apply', {
       id,
     }),
+};
+
+export interface IntegrationParameterView {
+  name: string;
+  type: 'boolean' | 'string' | 'secret';
+  description: string;
+  required: boolean;
+  format?: 'hostPort' | 'url' | 'identifier';
+  default?: boolean | string;
+}
+
+export interface IntegrationView {
+  name: string;
+  version: string;
+  source: 'built-in' | 'workspace';
+  kind: string;
+  displayName: string;
+  description: string;
+  languages: string[];
+  capabilities: string[];
+  collects: 'push' | 'pull';
+  parameters: IntegrationParameterView[];
+  requirements: { kind: string; description: string; packages?: string[]; manager?: string }[];
+  services: string[];
+  docs: string;
+}
+
+export const integrationsApi = {
+  list: () => call<{ integrations: IntegrationView[] }>('GET', '/api/v1/integrations'),
+};
+
+export interface ApiTokenView {
+  id: string;
+  username: string;
+  name: string;
+  role: Role;
+  createdAt: string;
+  expiresAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}
+
+export const tokensApi = {
+  list: (all = false) =>
+    call<{ tokens: ApiTokenView[] }>('GET', `/api/v1/tokens${all ? '?all=true' : ''}`),
+  create: (name: string, role: Role, expiresInDays: number) =>
+    call<{ token: string; record: ApiTokenView }>('POST', '/api/v1/tokens', {
+      name,
+      role,
+      expiresInDays,
+    }),
+  revoke: (id: string) => call<undefined>('DELETE', `/api/v1/tokens/${encodeURIComponent(id)}`),
 };

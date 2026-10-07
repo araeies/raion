@@ -253,6 +253,22 @@ describe('service connection API', () => {
     const nodejs = body.integrations.find((i) => i.name === 'nodejs')!;
     expect(nodejs.source).toBe('built-in');
     expect(nodejs.docs).toContain('Troubleshooting');
+    const full = res.json<{
+      integrations: {
+        name: string;
+        services: string[];
+        collects: string;
+        parameters: { name: string; type: string; required: boolean }[];
+      }[];
+    }>().integrations;
+    // The workspace's shop service is a Node.js service.
+    expect(full.find((i) => i.name === 'nodejs')!.services).toEqual(['shop']);
+    const pg = full.find((i) => i.name === 'postgresql')!;
+    expect(pg.collects).toBe('pull');
+    expect(pg.parameters.find((p) => p.name === 'password')).toMatchObject({
+      type: 'secret',
+      required: true,
+    });
   });
 });
 
@@ -416,5 +432,34 @@ describe('Drift repair API', () => {
     const res = await post(users.editor!);
     expect(res.statusCode).toBe(409);
     expect(res.json<{ error: { code: string } }>().error.code).toBe('not_deployed');
+  });
+});
+
+describe('API tokens in use', () => {
+  it('create an SLO from a script, audited with the token name', async () => {
+    const users = await start(false);
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tokens',
+      headers: { host: HOST, cookie: users.editor!, 'x-raion-csrf': '1' },
+      payload: { name: 'slo-bot', role: 'editor', expiresInDays: 7 },
+    });
+    const { token } = created.json<{ token: string }>();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/slos',
+      headers: { host: HOST, authorization: `Bearer ${token}` },
+      payload: {
+        service: 'shop',
+        name: 'availability',
+        sli: { type: 'availability' },
+        target: 99.9,
+        window: '30d',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const entry = store.listAudit(10).find((e) => e.action === 'slo.create')!;
+    expect(entry.actor).toBe('editor');
+    expect(entry.details).toMatchObject({ token: 'slo-bot' });
   });
 });

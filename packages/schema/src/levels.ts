@@ -17,21 +17,15 @@ export const level = z.union([z.literal(1), z.literal(2), z.literal(3)], {
 
 export const FEATURE_FLAGS = {
   logs: { level: 1, description: 'Collect application logs' },
-  hostMetrics: { level: 1, description: 'CPU, memory, disk and network metrics for the host' },
-  httpMetrics: { level: 1, description: 'Request rate, error rate and latency for HTTP services' },
   basicAlerts: {
     level: 1,
     description: 'Alerts for errors, latency, missing telemetry and host resources',
   },
-  basicDashboards: { level: 1, description: 'Overview, service and infrastructure dashboards' },
   traces: { level: 2, description: 'Distributed tracing' },
   traceLogCorrelation: { level: 2, description: 'Link logs and traces via trace and span IDs' },
   serviceGraph: { level: 2, description: 'Service dependency map derived from traces' },
-  goldenSignalDashboards: { level: 2, description: 'Golden-signal and RED dashboards per service' },
-  databaseMonitoring: { level: 2, description: 'Database integrations (PostgreSQL, MySQL, Redis)' },
   slos: { level: 3, description: 'SLIs, SLOs, error budgets and burn-rate alerts' },
   ownershipRouting: { level: 3, description: 'Route alerts to the owning team' },
-  runbookLinks: { level: 3, description: 'Attach runbook links to alerts and SLOs' },
 } as const satisfies Record<string, { level: Level; description: string }>;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
@@ -39,12 +33,34 @@ export type FeatureFlags = Record<FeatureFlag, boolean>;
 
 const flagNames = Object.keys(FEATURE_FLAGS) as [FeatureFlag, ...FeatureFlag[]];
 
-export const featureOverrides = z.strictObject(
-  Object.fromEntries(flagNames.map((flag) => [flag, z.boolean().optional()])) as Record<
+/**
+ * Feature names that are no longer accepted, with what controls the behaviour instead. They
+ * get a specific message rather than "unknown field".
+ */
+export const REMOVED_FEATURES = {
+  hostMetrics: 'host metrics are controlled by infrastructure.host',
+  httpMetrics:
+    "HTTP metrics come from the service's integration; signals.metrics turns metrics off",
+  basicDashboards: 'dashboards are always generated',
+  goldenSignalDashboards: "golden-signal panels come from the service's integration",
+  databaseMonitoring: 'databases are monitored through their integration (e.g. postgresql)',
+  runbookLinks: 'runbook links are added whenever runbooks are set',
+} as const;
+
+export const featureOverrides = z.strictObject({
+  ...(Object.fromEntries(flagNames.map((flag) => [flag, z.boolean().optional()])) as Record<
     FeatureFlag,
     z.ZodOptional<z.ZodBoolean>
-  >,
-);
+  >),
+  ...(Object.fromEntries(
+    Object.entries(REMOVED_FEATURES).map(([name, instead]) => [
+      name,
+      z
+        .never({ error: `"${name}" is no longer a feature switch: ${instead}. Remove it.` })
+        .optional(),
+    ]),
+  ) as Record<keyof typeof REMOVED_FEATURES, z.ZodOptional<z.ZodNever>>),
+});
 
 export function presetFor(lvl: Level): FeatureFlags {
   return Object.fromEntries(

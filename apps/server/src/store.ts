@@ -15,6 +15,8 @@ export interface User {
   role: Role;
   disabled: boolean;
   createdAt: string;
+  /** Signs in through single sign-on; has no password, and its role comes from the provider. */
+  sso?: boolean;
 }
 
 interface UserRow {
@@ -26,6 +28,8 @@ interface UserRow {
   password_hash: string;
   failed_attempts: number;
   locked_until: string | null;
+  sso_issuer: string | null;
+  sso_subject: string | null;
 }
 
 export interface UserWithSecrets extends User {
@@ -128,7 +132,65 @@ const MIGRATIONS = [
      PRIMARY KEY (fingerprint, starts_at)
    );
    CREATE INDEX alerts_resolved ON alerts(resolved_at);`,
+  `CREATE TABLE api_tokens (
+     id TEXT PRIMARY KEY,
+     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     name TEXT NOT NULL,
+     secret_hash TEXT NOT NULL,
+     role TEXT NOT NULL CHECK (role IN ('viewer', 'editor', 'admin')),
+     created_at TEXT NOT NULL,
+     expires_at TEXT NOT NULL,
+     last_used_at TEXT,
+     revoked_at TEXT
+   );
+   CREATE INDEX api_tokens_user ON api_tokens(user_id);`,
+  `ALTER TABLE users ADD COLUMN sso_issuer TEXT;
+   ALTER TABLE users ADD COLUMN sso_subject TEXT;
+   CREATE UNIQUE INDEX users_sso ON users(sso_issuer, sso_subject) WHERE sso_issuer IS NOT NULL;`,
 ];
+
+/** Password value of accounts that sign in through single sign-on: matches no password. */
+export const NO_PASSWORD = '!sso';
+
+/** A personal API token. The secret itself is never stored, only its hash. */
+export interface ApiToken {
+  id: string;
+  userId: number;
+  username: string;
+  name: string;
+  role: Role;
+  createdAt: string;
+  expiresAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}
+
+interface ApiTokenRow {
+  id: string;
+  user_id: number;
+  username: string;
+  name: string;
+  secret_hash: string;
+  role: Role;
+  created_at: string;
+  expires_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+function toApiToken(r: ApiTokenRow): ApiToken {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    username: r.username,
+    name: r.name,
+    role: r.role,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+    lastUsedAt: r.last_used_at,
+    revokedAt: r.revoked_at,
+  };
+}
 
 /**
  * Operational data only (users, sessions, audit log). Observability configuration never
@@ -197,6 +259,31 @@ export class Store {
       .prepare('INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)')
       .run(username, passwordHash, role, createdAt);
     return { id: Number(info.lastInsertRowid), username, role, disabled: false, createdAt };
+  }
+
+  /** The account linked to a person at an identity provider. */
+  findSsoUser(issuer: string, subject: string): UserWithSecrets | undefined {
+    const row = this.#db
+      .prepare('SELECT * FROM users WHERE sso_issuer = ? AND sso_subject = ?')
+      .get(issuer, subject) as UserRow | undefined;
+    return row ? toUserWithSecrets(row) : undefined;
+  }
+
+  createSsoUser(username: string, role: Role, issuer: string, subject: string): User {
+    const createdAt = new Date().toISOString();
+    const info = this.#db
+      .prepare(
+        'INSERT INTO users (username, password_hash, role, created_at, sso_issuer, sso_subject) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(username, NO_PASSWORD, role, createdAt, issuer, subject);
+    return {
+      id: Number(info.lastInsertRowid),
+      username,
+      role,
+      disabled: false,
+      createdAt,
+      sso: true,
+    };
   }
 
   findUser(username: string): UserWithSecrets | undefined {
@@ -288,6 +375,81 @@ export class Store {
 
   deleteUserSessions(userId: number): void {
     this.#db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+  }
+
+  // ----- API tokens ----------------------------------------------------------------------
+
+  createApiToken(token: {
+    id: string;
+    userId: number;
+    name: string;
+    secretHash: string;
+    role: Role;
+    expiresAt: Date;
+  }): void {
+    this.#db
+      .prepare(
+        'INSERT INTO api_tokens (id, user_id, name, secret_hash, role, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        token.id,
+        token.userId,
+        token.name,
+        token.secretHash,
+        token.role,
+        new Date().toISOString(),
+        token.expiresAt.toISOString(),
+      );
+  }
+
+  /** The token and its hash, for checking a presented secret. */
+  getApiToken(id: string): (ApiToken & { secretHash: string }) | undefined {
+    const row = this.#db
+      .prepare(
+        'SELECT t.*, u.username FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.id = ?',
+      )
+      .get(id) as ApiTokenRow | undefined;
+    return row ? { ...toApiToken(row), secretHash: row.secret_hash } : undefined;
+  }
+
+  /** Tokens of one user, or of everyone; newest first. Revoked tokens are kept for the record. */
+  listApiTokens(userId?: number): ApiToken[] {
+    const rows = (userId === undefined
+      ? this.#db
+          .prepare(
+            'SELECT t.*, u.username FROM api_tokens t JOIN users u ON u.id = t.user_id ORDER BY t.created_at DESC',
+          )
+          .all()
+      : this.#db
+          .prepare(
+            'SELECT t.*, u.username FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.user_id = ? ORDER BY t.created_at DESC',
+          )
+          .all(userId)) as unknown as ApiTokenRow[];
+    return rows.map(toApiToken);
+  }
+
+  countActiveApiTokens(userId: number): number {
+    return (
+      this.#db
+        .prepare(
+          'SELECT COUNT(*) AS n FROM api_tokens WHERE user_id = ? AND revoked_at IS NULL AND expires_at > ?',
+        )
+        .get(userId, new Date().toISOString()) as { n: number }
+    ).n;
+  }
+
+  touchApiToken(id: string): void {
+    this.#db
+      .prepare('UPDATE api_tokens SET last_used_at = ? WHERE id = ?')
+      .run(new Date().toISOString(), id);
+  }
+
+  revokeApiToken(id: string): boolean {
+    return (
+      this.#db
+        .prepare('UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL')
+        .run(new Date().toISOString(), id).changes > 0
+    );
   }
 
   deleteExpiredSessions(idleBefore: Date, createdBefore: Date): number {
@@ -396,14 +558,34 @@ export class Store {
       );
   }
 
-  listAudit(limit: number, beforeId?: number): AuditEntry[] {
-    const rows = (beforeId
-      ? this.#db
-          .prepare('SELECT * FROM audit_log WHERE id < ? ORDER BY id DESC LIMIT ?')
-          .all(beforeId, limit)
-      : this.#db
-          .prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT ?')
-          .all(limit)) as unknown as (Omit<AuditEntry, 'details'> & { details: string | null })[];
+  listAudit(
+    limit: number,
+    beforeId?: number,
+    filter: { actor?: string; action?: string } = {},
+  ): AuditEntry[] {
+    const where: string[] = [];
+    const args: (string | number)[] = [];
+    if (beforeId) {
+      where.push('id < ?');
+      args.push(beforeId);
+    }
+    if (filter.actor) {
+      where.push('actor = ?');
+      args.push(filter.actor);
+    }
+    if (filter.action) {
+      // "user" matches user.create and user.update; "login" matches login exactly.
+      // The API allows only lowercase letters and dots here, so no LIKE wildcards appear.
+      where.push('(action = ? OR action LIKE ?)');
+      args.push(filter.action, `${filter.action}.%`);
+    }
+    const rows = this.#db
+      .prepare(
+        `SELECT * FROM audit_log ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY id DESC LIMIT ?`,
+      )
+      .all(...args, limit) as unknown as (Omit<AuditEntry, 'details'> & {
+      details: string | null;
+    })[];
     return rows.map((r) => ({
       ...r,
       details: r.details ? (JSON.parse(r.details) as Record<string, unknown>) : null,
@@ -418,6 +600,7 @@ function toUser(row: UserRow): User {
     role: row.role,
     disabled: row.disabled === 1,
     createdAt: row.created_at,
+    ...(row.sso_issuer ? { sso: true } : {}),
   };
 }
 

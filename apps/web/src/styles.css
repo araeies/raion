@@ -592,3 +592,43 @@ a.secondary-link {
 .diff .diff-hunk {
   color: var(--muted);
 }
+
+.stack {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 28rem;
+}
+
+.inline-form {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  max-width: 22rem;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 1rem 0;
+}
+
+a.user {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.user:hover,
+a.user:focus-visible {
+  text-decoration: underline;
+}
+
+.card-title {
+  font-size: 1.1rem;
+  margin: 0 0 0.5rem;
+}
+
+.markdown h3 {
+  margin-top: 1.5rem;
+}

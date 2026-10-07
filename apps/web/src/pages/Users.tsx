@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api, type Role, type User } from '../api';
 import { ErrorMessage, Field, useSubmit } from '../components';
 import { useLoad } from '../useLoad';
+import { AllTokens } from './Tokens';
 
 const ROLE_HELP: Record<Role, string> = {
   viewer: 'Can see services, health, SLOs, alerts and configuration.',
@@ -12,6 +13,8 @@ const ROLE_HELP: Record<Role, string> = {
 export function UsersPage({ currentUser }: { currentUser: User }) {
   const result = useLoad(() => api.users(), 'users');
   const [actionError, setActionError] = useState<unknown>(null);
+  const [resetting, setResetting] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const update = async (user: User, changes: { role?: Role; disabled?: boolean }) => {
     setActionError(null);
@@ -38,6 +41,11 @@ export function UsersPage({ currentUser }: { currentUser: User }) {
         ))}
       </ul>
       <ErrorMessage error={actionError} />
+      {notice && (
+        <p className="notice notice-ok" role="status">
+          {notice}
+        </p>
+      )}
       {result.state === 'loading' && <p aria-busy="true">Loading users…</p>}
       {result.state === 'error' && <p role="alert">{result.error.message}</p>}
       {result.state === 'ready' && (
@@ -57,6 +65,7 @@ export function UsersPage({ currentUser }: { currentUser: User }) {
                 <th scope="row">
                   {u.username}
                   {u.id === currentUser.id && <span className="muted"> (you)</span>}
+                  {u.sso && <span className="badge">SSO</span>}
                 </th>
                 <td>
                   <label className="visually-hidden" htmlFor={`role-${u.id}`}>
@@ -65,6 +74,8 @@ export function UsersPage({ currentUser }: { currentUser: User }) {
                   <select
                     id={`role-${u.id}`}
                     value={u.role}
+                    disabled={u.sso}
+                    title={u.sso ? 'Set by the identity provider at each sign-in' : undefined}
                     onChange={(e) => void update(u, { role: e.target.value as Role })}
                   >
                     <option value="viewer">viewer</option>
@@ -80,7 +91,31 @@ export function UsersPage({ currentUser }: { currentUser: User }) {
                     onClick={() => void update(u, { disabled: !u.disabled })}
                   >
                     {u.disabled ? 'Enable' : 'Disable'}
-                  </button>
+                  </button>{' '}
+                  {u.id !== currentUser.id && !u.sso && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      aria-expanded={resetting === u.username}
+                      onClick={() => {
+                        setNotice(null);
+                        setResetting(resetting === u.username ? null : u.username);
+                      }}
+                    >
+                      Reset password
+                    </button>
+                  )}
+                  {resetting === u.username && (
+                    <ResetPassword
+                      username={u.username}
+                      onDone={() => {
+                        setResetting(null);
+                        setNotice(
+                          `${u.username}'s password was reset and they were signed out. Share the new password with them privately.`,
+                        );
+                      }}
+                    />
+                  )}
                 </td>
               </tr>
             ))}
@@ -88,6 +123,7 @@ export function UsersPage({ currentUser }: { currentUser: User }) {
         </table>
       )}
       <CreateUser onCreated={result.reload} />
+      <AllTokens />
     </>
   );
 }
@@ -136,5 +172,32 @@ function CreateUser({ onCreated }: { onCreated: () => void }) {
         </button>
       </form>
     </section>
+  );
+}
+
+/** An admin sets a new password for someone else (for example, after they forgot theirs). */
+function ResetPassword({ username, onDone }: { username: string; onDone: () => void }) {
+  const [password, setPassword] = useState('');
+  const { pending, error, onSubmit } = useSubmit(async () => {
+    await api.updateUser(username, { password });
+    setPassword('');
+    onDone();
+  });
+  return (
+    <form onSubmit={onSubmit} className="inline-form">
+      <Field
+        id={`reset-${username}`}
+        label={`New password for ${username}`}
+        type="password"
+        autoComplete="new-password"
+        value={password}
+        onChange={setPassword}
+        hint="At least 12 characters, not containing the username."
+      />
+      <button type="submit" disabled={pending}>
+        {pending ? 'Saving…' : 'Set password'}
+      </button>
+      <ErrorMessage error={error} />
+    </form>
   );
 }
