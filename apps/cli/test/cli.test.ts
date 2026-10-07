@@ -164,3 +164,20 @@ describe('raion integrations', () => {
     expect(rows.find((r) => r.name === 'acme-java')!.source).toBe('workspace');
   });
 });
+
+describe('cancelling with Ctrl+C', () => {
+  it('recognises the error a question raises when Ctrl+C is pressed', async () => {
+    const { PassThrough } = await import('node:stream');
+    const { createInterface } = await import('node:readline/promises');
+    const { Cancelled, isCancellation } = await import('../src/prompt.js');
+    const input = new PassThrough();
+    const rl = createInterface({ input, output: new PassThrough(), terminal: true });
+    const answer = rl.question('> ');
+    input.write('\u0003');
+    const error: unknown = await answer.catch((e: unknown) => e);
+    rl.close();
+    expect(isCancellation(error)).toBe(true);
+    expect(isCancellation(new Cancelled())).toBe(true);
+    expect(isCancellation(new Error('disk full'))).toBe(false);
+  });
+});

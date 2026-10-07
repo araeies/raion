@@ -13,7 +13,7 @@ import {
 import { stateRoot } from '@raion/deploy';
 import { DNS_LABEL, LANGUAGES, SERVICE_TYPES, toJsonSchema, type Level } from '@raion/schema';
 import { AuthService, passwordProblem, ROLES, Store, USERNAME, type Role } from '@raion/server';
-import { ask, askHidden, choose, readStdin } from './prompt.js';
+import { ask, askHidden, Cancelled, choose, readStdin } from './prompt.js';
 
 export const EXIT = { OK: 0, INVALID: 1, USAGE: 2 } as const;
 
@@ -156,86 +156,139 @@ export function initFromFlags(flags: InitFlags): InitOptions {
 }
 
 async function askInitQuestions(flags: InitFlags): Promise<InitOptions> {
-  const nameProblem = (v: string) =>
-    DNS_LABEL.test(v)
-      ? undefined
-      : 'Use lowercase letters, digits and hyphens, starting with a letter.';
   process.stdout.write(
     'Welcome to Raion. A few questions, then we will create your observability workspace.\n',
   );
   process.stdout.write(
-    'Nothing is deployed yet; you can review and change everything afterwards.\n',
+    'Nothing is written until you confirm at the end. Press Ctrl+C at any time to stop.\n',
   );
+  let answers: InitAnswers = {
+    name: flags.name ?? 'my-observability',
+    type: 'api',
+    service: flags.service ?? 'my-service',
+    runtime: 'compose',
+    language: 'nodejs',
+    level: '1',
+  };
+  for (;;) {
+    answers = await askInitAnswers(answers);
+    process.stdout.write(`\nYou chose:\n${summarizeInit(answers)}\n`);
+    const next = await choose(
+      'Create the workspace with these answers?',
+      [
+        { value: 'create', label: 'Yes, create it' },
+        { value: 'change', label: 'Change my answers (your answers are kept as the defaults)' },
+        { value: 'cancel', label: 'Cancel without creating anything' },
+      ],
+      'create',
+    );
+    if (next === 'cancel') throw new Cancelled();
+    if (next === 'create') break;
+  }
+  return {
+    name: answers.name,
+    level: parseLevel(answers.level),
+    environment: flags.environment ?? 'production',
+    ...(answers.type === 'infrastructure'
+      ? {}
+      : {
+          service: {
+            name: answers.service,
+            type: answers.type,
+            language: answers.language,
+            runtime: answers.runtime,
+          },
+        }),
+  };
+}
 
+interface InitAnswers {
+  name: string;
+  type: (typeof SERVICE_TYPES)[number];
+  service: string;
+  runtime: 'compose' | 'host';
+  language: (typeof LANGUAGES)[number];
+  level: string;
+}
+
+const TYPE_CHOICES: { value: InitAnswers['type']; label: string }[] = [
+  { value: 'web', label: 'Web application' },
+  { value: 'api', label: 'API' },
+  { value: 'worker', label: 'Background worker' },
+  { value: 'database', label: 'Database' },
+  { value: 'microservice', label: 'Microservice' },
+  { value: 'infrastructure', label: 'Infrastructure only' },
+];
+const RUNTIME_CHOICES: { value: InitAnswers['runtime']; label: string }[] = [
+  { value: 'compose', label: 'Docker Compose' },
+  { value: 'host', label: 'Directly on this machine (VM or bare metal)' },
+];
+const LANGUAGE_CHOICES: { value: InitAnswers['language']; label: string }[] = [
+  { value: 'nodejs', label: 'Node.js' },
+  { value: 'python', label: 'Python' },
+  { value: 'go', label: 'Go' },
+  { value: 'java', label: 'Java' },
+  { value: 'dotnet', label: '.NET' },
+  { value: 'php', label: 'PHP' },
+  { value: 'other', label: 'Other' },
+];
+const LEVEL_CHOICES = [
+  {
+    value: '1',
+    label:
+      'Basic: logs, resource usage, request/error/latency metrics, basic alerts and dashboards',
+  },
+  {
+    value: '2',
+    label: 'Production: adds tracing, log/trace correlation, dependency map, golden signals',
+  },
+  { value: '3', label: 'SRE: adds SLOs, error budgets and burn-rate alerts' },
+];
+
+/** Asks every question, offering the previous answers as defaults. */
+async function askInitAnswers(previous: InitAnswers): Promise<InitAnswers> {
+  const nameProblem = (v: string) =>
+    DNS_LABEL.test(v)
+      ? undefined
+      : 'Use lowercase letters, digits and hyphens, starting with a letter.';
   const name = await ask(
     'Name for this workspace (usually your team or product):',
-    flags.name ?? 'my-observability',
+    previous.name,
     nameProblem,
   );
-  const type = await choose(
-    'What are you monitoring?',
-    [
-      { value: 'web', label: 'Web application' },
-      { value: 'api', label: 'API' },
-      { value: 'worker', label: 'Background worker' },
-      { value: 'database', label: 'Database' },
-      { value: 'microservice', label: 'Microservice' },
-      { value: 'infrastructure', label: 'Infrastructure only' },
-    ],
-    'api',
-  );
-  let service: InitOptions['service'];
-  if (type !== 'infrastructure') {
-    const serviceName = await ask(
-      'Name of the service:',
-      flags.service ?? 'my-service',
-      nameProblem,
-    );
-    const runtime = await choose(
-      'Where does it run?',
-      [
-        { value: 'compose', label: 'Docker Compose' },
-        { value: 'host', label: 'Directly on this machine (VM or bare metal)' },
-      ],
-      'compose',
-    );
-    const language = await choose(
-      'What language is it written in?',
-      [
-        { value: 'nodejs', label: 'Node.js' },
-        { value: 'python', label: 'Python' },
-        { value: 'go', label: 'Go' },
-        { value: 'java', label: 'Java' },
-        { value: 'dotnet', label: '.NET' },
-        { value: 'php', label: 'PHP' },
-        { value: 'other', label: 'Other' },
-      ],
-      'nodejs',
-    );
-    service = { name: serviceName, type, language, runtime };
+  const type = await choose('What are you monitoring?', TYPE_CHOICES, previous.type);
+  if (type === 'infrastructure') {
+    const level = await choose('How much do you want to set up?', LEVEL_CHOICES, previous.level);
+    return { ...previous, name, type, level };
   }
-  const level = await choose(
-    'How much do you want to set up?',
-    [
-      {
-        value: '1',
-        label:
-          'Basic: logs, resource usage, request/error/latency metrics, basic alerts and dashboards',
-      },
-      {
-        value: '2',
-        label: 'Production: adds tracing, log/trace correlation, dependency map, golden signals',
-      },
-      { value: '3', label: 'SRE: adds SLOs, error budgets and burn-rate alerts' },
-    ],
-    '1',
+  const service = await ask('Name of the service:', previous.service, nameProblem);
+  const runtime = await choose('Where does it run?', RUNTIME_CHOICES, previous.runtime);
+  const language = await choose(
+    'What language is it written in?',
+    LANGUAGE_CHOICES,
+    previous.language,
   );
-  return {
-    name,
-    level: parseLevel(level),
-    environment: flags.environment ?? 'production',
-    ...(service ? { service } : {}),
-  };
+  const level = await choose('How much do you want to set up?', LEVEL_CHOICES, previous.level);
+  return { name, type, service, runtime, language, level };
+}
+
+const labelOf = (choices: { value: string; label: string }[], value: string) =>
+  choices.find((c) => c.value === value)?.label ?? value;
+
+export function summarizeInit(a: InitAnswers): string {
+  const lines = [
+    ['Workspace', a.name],
+    ['Monitoring', labelOf(TYPE_CHOICES, a.type)],
+    ...(a.type === 'infrastructure'
+      ? []
+      : [
+          ['Service', a.service],
+          ['Runs on', labelOf(RUNTIME_CHOICES, a.runtime)],
+          ['Language', labelOf(LANGUAGE_CHOICES, a.language)],
+        ]),
+    ['Level', `${a.level}, ${labelOf(LEVEL_CHOICES, a.level).split(':')[0]!}`],
+  ];
+  return lines.map(([k, v]) => `  ${`${k!}:`.padEnd(12)}${v!}`).join('\n');
 }
 
 // ----- schema --------------------------------------------------------------------------

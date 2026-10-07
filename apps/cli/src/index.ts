@@ -42,6 +42,7 @@ import {
 import { adviseCommand, type AdviseFlags } from './advise.js';
 import { diffCommand, type DiffFlags } from './diff.js';
 import { integrationsListCommand, integrationsLockCommand } from './integrations.js';
+import { isCancellation } from './prompt.js';
 
 const interactive = () => process.stdin.isTTY;
 
@@ -481,7 +482,11 @@ users
 try {
   await program.parseAsync();
 } catch (error) {
-  if (error instanceof UsageError || error instanceof ServerConfigError) {
+  if (isCancellation(error)) {
+    // Ctrl+C at a question: stop quietly. Commands only change things after their last question.
+    io.err('\nCancelled.');
+    process.exitCode = 130;
+  } else if (error instanceof UsageError || error instanceof ServerConfigError) {
     io.err(`error: ${error.message}`);
     process.exitCode = EXIT.USAGE;
   } else {

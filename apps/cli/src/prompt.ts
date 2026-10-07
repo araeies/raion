@@ -1,6 +1,18 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 
+/** The person pressed Ctrl+C at a prompt. */
+export class Cancelled extends Error {
+  constructor() {
+    super('cancelled');
+  }
+}
+
+/** Ctrl+C at a readline prompt rejects with an AbortError; at a hidden prompt, with Cancelled. */
+export function isCancellation(error: unknown): boolean {
+  return error instanceof Cancelled || (error instanceof Error && error.name === 'AbortError');
+}
+
 export interface Choice<T extends string> {
   value: T;
   label: string;
@@ -76,7 +88,7 @@ export function askHidden(question: string): Promise<string> {
         if (char === '\u0003') {
           cleanup();
           stdout.write('\n');
-          reject(new Error('cancelled'));
+          reject(new Cancelled());
           return;
         }
         if (char === '\u007f' || char === '\b') value = value.slice(0, -1);

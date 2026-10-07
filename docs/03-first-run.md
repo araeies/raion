@@ -21,6 +21,8 @@ Raion asks a few questions:
 5. **What language is it written in?** Node.js, Python, Go, …
 6. **How much do you want to set up?** Level 1, 2 or 3 ([levels](01-what-is-raion.md#ideas-you-will-meet)). Start with 1 or 2 if you are unsure; you can change it later.
 
+Press Enter to keep the suggested answer shown in brackets. At the end, Raion shows your answers and asks before creating anything: choose **Change my answers** to go through the questions again with your answers filled in, or press Ctrl+C at any point to stop without creating anything.
+
 Every answer can also be given as a flag, for scripts: `raion init observability --yes --name shop --service payment-api --type api --language nodejs --runtime compose --level 2`.
 
 You get:
