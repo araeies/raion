@@ -22,13 +22,15 @@ Raion does not replace those tools; it configures them. Everything it generates 
 You need Node.js 24+, Docker, and Git.
 
 ```sh
-git clone <this repository> raion && cd raion
+git clone https://github.com/araeies/raion.git && cd raion
 corepack enable && pnpm install && pnpm run build
 
 pnpm raion init observability                      # describe your first service (asks a few questions)
 pnpm raion apply observability                     # deploy the observability stack
 pnpm raion server --workspace observability        # start the web UI
 ```
+
+If `corepack enable` fails with `EPERM` on Windows, see [Installing](docs/02-installing.md#install).
 
 The server prints a one-time link: open it to create your administrator account. Then go to **<http://127.0.0.1:7600>**.
 

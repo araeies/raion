@@ -4,14 +4,15 @@ Find your symptom below. Most commands explain their own errors, with the file a
 
 ## Installing and starting
 
-| Symptom                                             | What to do                                                                                                                                 |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `pnpm: command not found`                           | Run `corepack enable` (it comes with Node.js). On Windows, run the terminal as administrator once if it reports a permission error.        |
-| An error about the Node.js version                  | Raion needs Node.js 24 or newer: `node --version`.                                                                                         |
-| `raion: command not found`                          | Define the `raion` command in this terminal ([Installing](02-installing.md#the-raion-command)), or use `pnpm raion` from the Raion folder. |
-| `pnpm raion …` cannot find your workspace           | `pnpm raion` runs from the Raion folder; pass an absolute path, or use the `raion` command from your workspace's folder.                   |
-| `Docker is not available`                           | Start Docker Desktop, or check that your user can run `docker version`.                                                                    |
-| `127.0.0.1:4317 is already used by another program` | Another collector or agent uses the port. Stop it, or change the port in `raion.yaml` (`spec.target.compose.otlpGrpcPort`).                |
+| Symptom                                                       | What to do                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm: command not found`                                     | Run `corepack enable`. If `corepack` is not found either, run `npm install -g pnpm@12.9.1`.                                                                                                                                                         |
+| `corepack enable` fails with `EPERM: operation not permitted` | It needs administrator rights to add `pnpm` to the Node.js folder. Run it once in a terminal opened with _Run as administrator_, or run `npm install -g pnpm@12.9.1` instead, which needs no admin rights ([Installing](02-installing.md#install)). |
+| An error about the Node.js version                            | Raion needs Node.js 24 or newer: `node --version`.                                                                                                                                                                                                  |
+| `raion: command not found`                                    | Define the `raion` command in this terminal ([Installing](02-installing.md#the-raion-command)), or use `pnpm raion` from the Raion folder.                                                                                                          |
+| `pnpm raion …` cannot find your workspace                     | `pnpm raion` runs from the Raion folder; pass an absolute path, or use the `raion` command from your workspace's folder.                                                                                                                            |
+| `Docker is not available`                                     | Start Docker Desktop, or check that your user can run `docker version`.                                                                                                                                                                             |
+| `127.0.0.1:4317 is already used by another program`           | Another collector or agent uses the port. Stop it, or change the port in `raion.yaml` (`spec.target.compose.otlpGrpcPort`).                                                                                                                         |
 
 ## The web UI
 

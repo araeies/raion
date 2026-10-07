@@ -28,12 +28,20 @@ Every port except the web UI's can be changed in the workspace ([configuration](
 ## Install
 
 ```sh
-git clone <raion repository URL> raion
+git clone https://github.com/araeies/raion.git
 cd raion
 corepack enable          # makes pnpm available
 pnpm install
 pnpm run build
 ```
+
+**If `corepack enable` fails with `EPERM: operation not permitted`** (common on Windows): it is trying to add `pnpm` to the Node.js installation folder, which needs administrator rights. Either run that one command in a terminal opened with _Run as administrator_, or install pnpm for your user only, with the version Raion uses:
+
+```sh
+npm install -g pnpm@12.9.1
+```
+
+Then continue with `pnpm install`. If `corepack` itself is not found (newer Node.js versions no longer include it), use the same `npm install -g` command.
 
 Check it worked:
 
