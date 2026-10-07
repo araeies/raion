@@ -215,6 +215,8 @@ try {
     '--rm',
     '--network',
     'none',
+    // The temporary directory is owner-only; read it as its owner. (Not needed on Windows.)
+    ...(process.getuid ? ['--user', `${process.getuid()}:${process.getgid()}`] : []),
     '--mount',
     `type=bind,src=${app},dst=/w,readonly`,
     OSLO_IMAGE,

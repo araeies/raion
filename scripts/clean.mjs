@@ -3,7 +3,15 @@ import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = join(import.meta.dirname, '..');
-for (const dir of ['packages/schema', 'packages/core', 'apps/server', 'apps/cli', 'apps/web']) {
+for (const dir of [
+  'packages/schema',
+  'packages/integrations',
+  'packages/core',
+  'packages/deploy',
+  'apps/server',
+  'apps/cli',
+  'apps/web',
+]) {
   rmSync(join(root, dir, 'dist'), { recursive: true, force: true });
   rmSync(join(root, dir, 'tsconfig.tsbuildinfo'), { force: true });
 }

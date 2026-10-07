@@ -443,6 +443,9 @@ const run = spawnSync(
     '--rm',
     '--network',
     'none',
+    // The temporary directory is owner-only; run promtool as its owner rather than the
+    // image's "nobody" user. (Docker Desktop on Windows has no such ownership.)
+    ...(process.getuid ? ['--user', `${process.getuid()}:${process.getgid()}`] : []),
     '--mount',
     `type=bind,src=${dir},dst=/rules,readonly`,
     '--entrypoint',

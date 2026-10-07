@@ -122,6 +122,7 @@ jobs:
     name: CodeQL
     runs-on: ubuntu-latest
     permissions:
+      actions: read # the action reads this workflow run's details
       contents: read
       security-events: write
     steps:

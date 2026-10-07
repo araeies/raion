@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc -b && pnpm --filter @raion/web build && pnpm --filter @raion/schema run export-json-schema",
     "typecheck": "tsc -b && tsc -p packages/core/test && tsc -p packages/deploy/test && tsc -p apps/server/test && tsc -p apps/cli/test && pnpm --filter @raion/web typecheck",
-    "lint": "eslint --max-warnings 0 .",
+    "lint": "tsc -b && eslint --max-warnings 0 .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
