@@ -94,8 +94,10 @@ You land on **Services**. The bar at the top takes you to the rest of Raion:
 | **SLOs**                | Reliability targets and their error budgets; create new SLOs                 |
 | **Alerts**              | What is firing now, silences, recent history, and whether alerting works     |
 | **Advisor**             | Gaps in your observability, and fixes                                        |
+| **Integrations**        | What Raion can monitor, and how to set up each integration                   |
 | **Observability stack** | Health of the components, pending changes, generated configuration, releases |
-| **Users** (admins)      | Accounts and roles                                                           |
+| **Users** (admins)      | Accounts, roles, password resets and everyone's API tokens                   |
+| **Audit log** (admins)  | Who did what, and when                                                       |
 | **Grafana ↗**           | Dashboards and exploration, already signed in                                |
 
 The [tour of the web UI](04-ui-tour.md) explains each page.
