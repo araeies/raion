@@ -38,7 +38,7 @@ It needs no running stack and no secrets.
 
 ## Setting it up in your repository
 
-1. Copy `observability/`, `CODEOWNERS` (to `.github/CODEOWNERS`) and the workflows.
+1. Copy `observability/`, `CODEOWNERS` (to `.github/CODEOWNERS`) and the workflows. `observability` is the folder that holds the workspace; if you name yours differently, change the folder in the workflows and `CODEOWNERS` too.
 2. Pin the action to a commit of the Raion repository: `uses: <owner>/raion/actions/check@<commit-sha>`.
 3. **Deploying** needs a machine that runs the stack, with a self-hosted runner labelled `raion` and Raion installed:
    - Create `/srv/raion/shop`, owned by the runner's user, mode 0700. Releases, secrets and the user database live there, outside the checkout, through `RAION_STATE_DIR`.

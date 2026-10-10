@@ -2,6 +2,8 @@
 
 Connects Java applications **without changing their code or their image**, with the [OpenTelemetry Java agent](https://opentelemetry.io/docs/zero-code/java/agent/).
 
+Names such as `my-app` on this page are examples: use your own. See [names in the examples](../README.md#names-in-the-examples).
+
 ## What you get
 
 | Signal  | What                                                                                                                                           | Where to look                                |

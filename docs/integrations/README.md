@@ -2,6 +2,8 @@
 
 An **integration** is Raion's knowledge of a technology. It decides how a service is connected, and what Raion can show and alert on for it. A service with an HTTP integration, for example, gets golden-signal dashboards, error and latency alerts, and availability and latency SLOs; a PostgreSQL database gets connection, cache and deadlock monitoring.
 
+Names such as `orders-db` and `ORDERS_DB_MONITOR_PASSWORD` on this page are examples: use your own. See [names in the examples](../README.md#names-in-the-examples).
+
 ## Available integrations
 
 | Integration                    | For                 | How the telemetry arrives                                     | Change to your application                         |

@@ -2,6 +2,8 @@
 
 The web UI is the main way to use Raion. Everything you need day to day is here: adding applications, seeing their health, understanding alerts, setting reliability goals and deploying changes. You never need to open a configuration file. (If you like terminals, everything here can also be done with the [`raion` command](reference/ui-and-cli.md).)
 
+Names such as `payment-api` on this page are examples: use your own. See [names in the examples](README.md#names-in-the-examples).
+
 Open **<http://127.0.0.1:7600>** while `raion server` is running (see [First run](03-first-run.md)) and sign in, with your Raion username and password or, if your organization set it up, with **Sign in with …** ([single sign-on](15-users-and-security.md#single-sign-on)).
 
 **Help is built in.** Look for:

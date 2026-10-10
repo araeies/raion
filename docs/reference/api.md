@@ -2,6 +2,8 @@
 
 The Raion web UI uses this API; scripts can too. All routes are under `/api/v1` on the Raion server (by default `http://127.0.0.1:7600`).
 
+Names such as `checkout` on this page are examples: use your own. See [names in the examples](../README.md#names-in-the-examples).
+
 ## Using the API from a script
 
 ### API tokens

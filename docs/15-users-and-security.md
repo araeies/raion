@@ -2,6 +2,8 @@
 
 Everyone who uses Raion has their own account. Raion can deploy infrastructure and holds credentials, so access is protected even when it runs on a laptop.
 
+Names such as `OIDC_CLIENT_SECRET`, `ci-deploy` and `acme` on this page are examples: use your own. See [names in the examples](README.md#names-in-the-examples).
+
 ## Roles
 
 | Role       | Can                                                                                                                                                                                    |

@@ -2,6 +2,8 @@
 
 This page walks through finding the cause of a problem with Raion, from the first alert to the line of code or the struggling dependency. The example: `payment-api` starts failing.
 
+Names such as `payment-api` on this page are examples: use your own. See [names in the examples](README.md#names-in-the-examples).
+
 ## 1. The alert
 
 You learn about it from an alert: on the **Alerts** page (and **Home**), and in Slack, email or your webhook if you set them up. On the Alerts page, each alert explains:

@@ -15,7 +15,7 @@ loadgen ──► payment-api ──► ledger-api
 
 ## Try it
 
-You need Docker and the Raion CLI (see the main [README](../../README.md)). From this folder:
+You need Docker and the Raion CLI (see the main [README](../../README.md)). In the commands below, `observability` is the **folder** that holds the workspace, not its name (which is `payments-demo`, in `observability/raion.yaml`). From this folder:
 
 ```sh
 # 1. Deploy the observability stack described in ./observability

@@ -17,6 +17,8 @@ loadgen ──► edge (Nginx) ──► catalog-api (Python) ──► pricing-
 
 The workspace is in [`observability/`](observability). Nothing secret is in this directory: the database passwords come from your environment.
 
+In the commands below, `observability` is that **folder**, not the workspace's name (which is `polyglot-shop`, in `observability/raion.yaml`). With your own workspace, use its folder instead.
+
 ## Run it
 
 Needs Docker and the `raion` command (see [Using raion from any folder](../../docs/02-installing.md#the-raion-command)). Run these from this folder.

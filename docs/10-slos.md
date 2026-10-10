@@ -2,6 +2,8 @@
 
 An **SLO** says how reliable a service must be for the people who use it, for example _"99.9% of payment requests succeed, measured over 30 days"_. Raion turns that sentence into measurements, error budgets, dashboards and alerts. You don't write PromQL.
 
+Names such as `payment-api` on this page are examples: use your own. See [names in the examples](README.md#names-in-the-examples).
+
 ## The three ideas
 
 | Idea                | Meaning                                                        | Example (99.9% over 30 days)                                      |

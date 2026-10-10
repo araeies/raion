@@ -2,6 +2,8 @@
 
 Raion collects three kinds of telemetry, often called signals. This page explains what is collected for each service and where to find it.
 
+Names such as `payment-api` on this page are examples: use your own. See [names in the examples](README.md#names-in-the-examples).
+
 | Signal      | Answers                                                | Stored in  | Where to look                                                                      |
 | ----------- | ------------------------------------------------------ | ---------- | ---------------------------------------------------------------------------------- |
 | **Metrics** | How much, how fast, how often it fails                 | Prometheus | Application page (Overview), its dashboard, Grafana → Explore → Prometheus         |

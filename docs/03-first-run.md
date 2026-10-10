@@ -2,6 +2,8 @@
 
 This page takes you from nothing to the Raion web UI, signed in as the administrator, with monitoring running and your first application connected. You type two commands; everything else is done in the web UI. It takes about fifteen minutes, most of it downloading container images.
 
+Names such as `payment-api`, `ledger-api` and `my-monitoring` on this page are examples: use your own. See [names in the examples](README.md#names-in-the-examples).
+
 Make sure Docker is running and the [`raion` command](02-installing.md#the-raion-command) works.
 
 ## 1. Create a workspace
@@ -34,6 +36,8 @@ observability/
 │   └── payment-api.yaml    one file per service
 └── .gitignore              keeps .raion/ (local state and secrets) out of Git
 ```
+
+`observability` is the **folder** of the workspace, and any name works: `raion init my-monitoring` creates `my-monitoring/`. Commands take that folder (`raion verify my-monitoring`), and you can leave it out when you are inside it, or when it is called `observability` and you are next to it. The workspace's own name, the first question, is what you see in dashboards and the web UI.
 
 Everything after this happens in the web UI. (Prefer the terminal? Each step below has a command too: see [Web UI and command line](reference/ui-and-cli.md).)
 

@@ -2,6 +2,8 @@
 
 An integration package teaches Raion about one technology. It is **data only**: a manifest (`integration.yaml`) and its documentation. Raion never runs code from a package.
 
+Names such as `acme` on this page are examples: use your own. See [names in the examples](../README.md#names-in-the-examples).
+
 This page explains how to add an integration to **your workspace** (`integrations/<name>/`, next to `raion.yaml`), for your team's own needs, such as a language Raion does not cover. The integrations included with Raion are chosen and maintained by the Raion maintainer; to suggest one, [open an issue](../../CONTRIBUTING.md).
 
 ## What a package can do

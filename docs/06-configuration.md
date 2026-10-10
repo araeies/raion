@@ -2,6 +2,8 @@
 
 Raion keeps what it observes in YAML files in a **workspace** folder. The web UI writes these files for you (**Add an application**, an application's **Settings** tab, **Settings**, **Reliability goals**), so you only need this page if you prefer to edit files, review changes in Git, or want an option the web UI does not show. This page lists every option. Run `raion validate` after each change: it checks every field, explains mistakes with the file and line, and suggests fixes.
 
+Names such as `payment-api`, `ledger-api` and `orders-db` on this page are examples: use your own. See [names in the examples](README.md#names-in-the-examples).
+
 Every document starts with:
 
 ```yaml

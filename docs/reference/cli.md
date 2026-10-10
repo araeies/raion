@@ -2,6 +2,8 @@
 
 The `raion` command does everything the web UI does, for terminals, scripts and CI/CD. It works on its own: it needs the workspace folder and Docker, not the web UI. [Web UI and command line](ui-and-cli.md) maps each page of the web UI to its command.
 
+Names such as `ops-slack`, `ci-deploy` and `shop` on this page are examples: use your own. See [names in the examples](../README.md#names-in-the-examples).
+
 `raion --help` lists the commands; `raion <command> --help` shows each command's options. This page is the same, with explanations.
 
 **Which workspace.** Commands take the workspace folder as an argument (`raion apply observability`), or with `-w`/`--workspace` where shown. Without one, Raion uses the current folder if it contains `raion.yaml`, and `./observability` otherwise.

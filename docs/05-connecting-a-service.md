@@ -2,6 +2,8 @@
 
 Once monitoring is running, your applications send it their measurements, logs and traces, and Raion's collector reads your databases. Raion tells you exactly what to do for each application, does it for you where it can, and then checks that it worked.
 
+Names such as `payment-api`, `ledger-api` and `orders-db` on this page are examples: use your own. See [names in the examples](README.md#names-in-the-examples).
+
 There are three situations, and Raion handles each one:
 
 | Your application                                           | What Raion does                                                                                                                                        |

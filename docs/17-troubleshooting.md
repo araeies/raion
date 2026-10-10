@@ -2,6 +2,8 @@
 
 Find your symptom below. Most commands explain their own errors, with the file and line or the component involved; start there.
 
+Names such as `OIDC_CLIENT_SECRET` and `rescue-admin` on this page are examples: use your own. See [names in the examples](README.md#names-in-the-examples).
+
 ## Installing and starting
 
 | Symptom                                                       | What to do                                                                                                                                                                                                                                          |

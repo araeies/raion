@@ -2,6 +2,8 @@
 
 Raion's workspace is plain YAML, meant for Git. This guide shows how a team reviews, deploys and audits its observability the way it does code.
 
+Names such as `checkout` on this page are examples: use your own. See [names in the examples](README.md#names-in-the-examples).
+
 | Step   | Command                                                                                            | What it guarantees                                                                                                  |
 | ------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | Edit   | your editor (with the [JSON Schema](06-configuration.md)), `raion slo add`, `raion advise --apply` | Changes are files                                                                                                   |

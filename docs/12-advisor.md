@@ -2,6 +2,8 @@
 
 The advisor looks for common gaps in your observability and tells you, for each one:
 
+Names such as `payment-api`, `ledger-api` and `postgres-main` on this page are examples: use your own. See [names in the examples](README.md#names-in-the-examples).
+
 - what is wrong
 - why it matters
 - what to do about it

@@ -2,6 +2,8 @@
 
 The collector connects with a monitoring user and reads PostgreSQL's statistics views. That user can read statistics, but no data.
 
+Names such as `orders-db` and `ORDERS_DB_MONITOR_PASSWORD` on this page are examples: use your own. See [names in the examples](../README.md#names-in-the-examples).
+
 1. Create the user:
 
    ```sql

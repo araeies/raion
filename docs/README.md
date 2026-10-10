@@ -48,6 +48,34 @@ Read these in order. By the end, you will have Raion running, be signed in to it
 | [Python, Go, PostgreSQL, Redis, Nginx](../examples/polyglot) | A shop in three languages with two databases and a proxy                  |
 | [A GitOps repository](../examples/gitops)                    | Pull-request checks, approved deployment and drift detection              |
 
+## Names in the examples
+
+The examples in these pages use made-up names. Replace them with your own; Raion does not depend on any of them.
+
+| Kind of name                   | Examples in these pages                                                                       | Where you choose it                                                 |
+| ------------------------------ | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Workspace folder               | `observability`, `my-monitoring`                                                              | `raion init <folder>`                                               |
+| Workspace name                 | `shop`, `acme`, `payments-demo`, `polyglot-shop`                                              | The first question of `raion init`; `metadata.name` in `raion.yaml` |
+| Applications                   | `payment-api`, `ledger-api`, `checkout`, `my-api`, `my-app`                                   | **Add an application**; `raion services add <name>`                 |
+| Databases and external systems | `orders-db`, `postgres-main`                                                                  | The application's settings, or its file                             |
+| Teams                          | `payments`                                                                                    | **Settings → Teams**; `raion teams add <name>`                      |
+| Notification channels          | `ops-email`, `ops-slack`, `payments-slack`, `pager`                                           | **Settings → Notifications**; `raion receivers add <name>`          |
+| Secrets                        | `SMTP_PASSWORD`, `PAYMENTS_SLACK_WEBHOOK`, `ORDERS_DB_MONITOR_PASSWORD`, `OIDC_CLIENT_SECRET` | `raion secrets set <NAME>`, then `${secret:NAME}` in files          |
+| People                         | `alex`, `rescue-admin`                                                                        | **People → Add a person**; `raion users add <username>`             |
+| API tokens                     | `ci-deploy`                                                                                   | Your account → **API tokens**; `raion tokens create --name`         |
+| Addresses and e-mail           | `example.com`, `shop.example.com`, `ops@example.com`                                          | Your own domains, servers and mailboxes                             |
+| Files you write                | `observability.override.yaml`, `compose.yaml`                                                 | `raion connect --out <file>`; your own compose files                |
+| Reliability goal names         | `availability`, `latency`                                                                     | **Set a goal** (the name defaults to what it measures)              |
+
+**Type these exactly as shown.** They are part of Raion, not examples:
+
+- file and folder names inside a workspace: `raion.yaml`, `services/`, `slos/`, `integrations/`, `integrations.lock.yaml`, `.raion/`
+- every setting name in workspace files (`spec`, `runtime`, `checks`, `alerts.errorRatePercent`, …) and their fixed values (`compose`, `host`, `remote`; `critical`, `standard`, `best-effort`; levels `1`, `2`, `3`; roles `viewer`, `editor`, `admin`)
+- integration names: `nodejs`, `python`, `java`, `go`, `postgresql`, `redis`, `nginx`
+- the reference syntax `${secret:…}` and `${env:…}` (only the part after the colon is yours)
+- names Raion creates: the `raion-ingest` network, the `otel-collector` address, alert names such as `ServiceHighErrorRate`, and validation codes such as `RAI-E027`
+- commands and options: `raion verify`, `--service`, `--format`, …
+
 ## Getting help
 
 Found a bug, something unclear in these pages, or a missing capability? See [Reporting issues](../CONTRIBUTING.md). Security problems are reported privately: see [SECURITY.md](../SECURITY.md).

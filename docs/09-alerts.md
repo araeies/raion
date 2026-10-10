@@ -2,6 +2,8 @@
 
 Raion watches your applications, the machine and its own monitoring tools. It tells you when something needs attention: on the **Alerts** page always, and by Slack, email or webhook if you set them up.
 
+Names such as `payment-api`, `payments` and `ops-email` on this page are examples: use your own. See [names in the examples](README.md#names-in-the-examples).
+
 ## One place, in plain words
 
 Every alert is on the **Alerts** page, explained so that anyone on the team can act on it:

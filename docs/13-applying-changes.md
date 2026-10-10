@@ -2,6 +2,8 @@
 
 Your workspace files describe what Raion should run. When you change them, Raion shows you what will change, validates it, and deploys it safely, keeping every earlier version so you can go back. This page explains that workflow, how to see the configuration Raion generates, and how to detect changes made behind Raion's back.
 
+Names such as `checkout` on this page are examples: use your own. See [names in the examples](README.md#names-in-the-examples).
+
 ## What gets deployed
 
 Raion runs these open-source components as one Docker Compose project, configured from your workspace:
