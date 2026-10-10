@@ -13,3 +13,4 @@ export * from './openslo.js';
 export * from './openslo-import.js';
 export * from './slo-authoring.js';
 export * from './advisor/index.js';
+export * from './workspace-edit.js';

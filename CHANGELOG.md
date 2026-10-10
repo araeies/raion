@@ -6,6 +6,33 @@ All notable changes to Raion are listed here. The format follows [Keep a Changel
 
 The first release of Raion.
 
+### Beginner-first web UI
+
+- A redesigned, light web UI: a sidebar, **Home** with what needs attention and a setup checklist, and help everywhere (explanations on hover, "What is this?" boxes, recommended choices, and technical details folded away for advanced users).
+- **Add an application**: a guided setup that asks where it runs (Docker Compose, Docker, this machine, the cloud, Kubernetes, or "I'm not sure"), lists the containers running on the machine, recommends what to monitor, and sets it up.
+- Everything the command line configures can be done in the web UI: applications, reliability goals, workspace settings (level, retention, machine monitoring), notification channels, teams and secrets.
+- Charts of each application's requests, failures and response time (or availability and answer time for outside checks) over the last hour, 6 hours or 24 hours.
+
+### Alerts, explained
+
+- Every alert says what is wrong, for which application, what it means, why it fired, since when, where it comes from and what to do; the exact rule is under technical details.
+- Alerts about to fire are shown before they fire, and alert history is filled in from Prometheus for any time the web UI was not running.
+- Grafana's own alerting is turned off, so every alert is in one place; the always-firing self-test is shown as such.
+
+### Connecting applications that already run
+
+- `raion discover` and **Add an application** find the containers running on the machine.
+- **Connect it for me** (admins) and `raion connect --restart` restart one Compose service with Raion's settings, after showing what will change; your compose files are not changed.
+- Node.js, Python and Java applications in Docker Compose are instrumented without rebuilding: Raion adds the pinned OpenTelemetry agent when the container starts. A built-in Java integration.
+- Outside checks for applications that run elsewhere (`runtime: remote`): availability, answer time and certificate expiry, with alerts, reliability goals and a dashboard section.
+
+### Web UI and command line together
+
+- One engine for both: the web UI and the command line use the same editing, validation, deployment and audit, and act on the same files and state.
+- New commands: `raion services`, `raion settings`, `raion receivers`, `raion teams`, `raion slo set|remove`, `raion alerts silence|silences|unsilence`, `raion users set-role|disable|enable|reset-password`, `raion tokens`, `raion audit`, `raion activity`, `raion discover` and `raion history`.
+- `--format json` with one JSON document on standard output, `--dry-run` for edits, and documented exit codes.
+- Deployments, rollbacks, repairs, tests and restarts are recorded wherever they start, followed live in the web UI, never run twice at once, and shown as interrupted if their process stops.
+
 ### Workspaces and configuration
 
 - Observability as code: a workspace of YAML files (`raion.yaml`, `services/`, `slos/`) describing services, teams, levels, notifications and SLOs.

@@ -2,6 +2,22 @@
 
 Zero-code [OpenTelemetry for Python](https://opentelemetry.io/docs/zero-code/python/). Flask, Django, FastAPI, requests, psycopg, SQLAlchemy, Redis and many more are instrumented by `opentelemetry-instrument` when the process starts.
 
+## Without rebuilding your image
+
+For applications in Docker Compose, Raion can add OpenTelemetry when the container starts: you install nothing and keep your start command. **Add an application** in the web UI does this for you when you choose Docker Compose and Python. In a workspace file:
+
+```yaml
+integrations:
+  - name: python
+    params:
+      injectAgent: true
+      alpine: false # true when the image is based on Alpine Linux
+```
+
+A small helper container copies the agent from Raion's pinned OpenTelemetry image into a shared, read-only volume, and Python loads it through `PYTHONPATH`. The helper has no network access and no privileges. Then restart the application with Raion's settings: **Connect it for me** on its **Connect** tab, or `raion connect --restart <name>`. Works with Python 3.9 and newer; set `alpine: true` for images based on Alpine Linux, which need a different build of the agent.
+
+## Installing the packages yourself
+
 1. Add the packages, plus the instrumentation for the libraries you use:
 
    ```sh

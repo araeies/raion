@@ -1,0 +1,82 @@
+# Raion integration: Java applications, instrumented with the OpenTelemetry Java agent.
+#
+# Integrations are data only. Raion reads this file; it never executes anything from it.
+# ${placeholders} are substituted into string values after the file has been parsed.
+apiVersion: raion/v1alpha1
+kind: Integration
+metadata:
+  name: java
+  version: 0.1.0
+spec:
+  kind: application
+  displayName: Java (OpenTelemetry agent)
+  description: >-
+    Zero-code OpenTelemetry instrumentation for Java with the OpenTelemetry Java agent: HTTP
+    request metrics (Spring Boot, servlet containers, Netty, Vert.x and more), distributed traces
+    across services and into databases, and logs from Logback, Log4j and java.util.logging,
+    linked to traces. No code changes.
+  languages: [java]
+
+  parameters:
+    injectAgent:
+      type: boolean
+      default: true
+      description: >-
+        Add the OpenTelemetry Java agent when the container starts (Docker Compose only):
+        nothing in your image changes. Turn off to add the agent yourself, for example when the
+        application does not run in Docker Compose.
+
+  requirements:
+    - kind: command
+      description: >-
+        Download the OpenTelemetry Java agent (opentelemetry-javaagent.jar, from the
+        opentelemetry-java-instrumentation releases on GitHub) and start the application with
+        "-javaagent:/path/to/opentelemetry-javaagent.jar", for example through the
+        JAVA_TOOL_OPTIONS environment variable.
+      when: { param: injectAgent, equals: false }
+
+  instrumentation:
+    env:
+      JAVA_TOOL_OPTIONS:
+        cases:
+          - when: { param: injectAgent, equals: true }
+            value: -javaagent:/otel-auto-instrumentation/javaagent.jar
+      OTEL_SERVICE_NAME: ${service.name}
+      OTEL_RESOURCE_ATTRIBUTES: ${resource.attributes}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${otlp.httpEndpoint}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: ${signals.traces}
+      OTEL_METRICS_EXPORTER: ${signals.metrics}
+      OTEL_LOGS_EXPORTER: ${signals.logs}
+      OTEL_METRIC_EXPORT_INTERVAL: '15000'
+    agent:
+      image: java
+      path: /javaagent.jar
+      when: { param: injectAgent, equals: true }
+
+  capabilities:
+    - id: http.server
+      metrics:
+        requestDuration:
+          name: http_server_request_duration_seconds
+          type: histogram
+          unit: seconds
+          labels:
+            method: http_request_method
+            status: http_response_status_code
+            route: http_route
+          buckets: [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10]
+    - id: http.client
+      metrics:
+        requestDuration:
+          name: http_client_request_duration_seconds
+          type: histogram
+          unit: seconds
+          labels:
+            method: http_request_method
+            status: http_response_status_code
+          buckets: [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10]
+    - id: logs.otlp
+    - id: traces.otlp
+
+  docs: README.md

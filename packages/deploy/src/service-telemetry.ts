@@ -19,6 +19,8 @@ export interface ServiceTelemetry {
     linkedTraceFound: boolean;
     message: string;
   };
+  /** Outside checks of its address, latest result of each. */
+  checks?: CheckStatus[];
   /** Golden signals over the last 5 minutes, when the service has HTTP metrics. */
   red?: {
     requestsPerSecond: number | null;
@@ -26,6 +28,16 @@ export interface ServiceTelemetry {
     p95Seconds: number | null;
     queries: { requestsPerSecond: string; errorRatio: string; p95Seconds: string };
   };
+}
+
+export interface CheckStatus {
+  url: string;
+  /** null: no result yet (the check has not run since the last deployment). */
+  up: boolean | null;
+  seconds: number | null;
+  status: number | null;
+  /** Days until the HTTPS certificate expires (null for http or no result). */
+  certificateDays: number | null;
 }
 
 /** Escapes a value for a PromQL/LogQL double-quoted string. */
@@ -64,6 +76,29 @@ export async function checkServiceTelemetry(
   const name = quote(svc.name);
   const result: ServiceTelemetry = { service: svc.name, signals: [] };
   const http = capabilityOf(svc.capabilities, 'http.server');
+
+  if (svc.checks.length > 0) {
+    result.checks = await Promise.all(
+      svc.checks.map(async (check) => {
+        const sel = `service_name=${name},raion_check="true",instance=${quote(check.url)}`;
+        const [up, seconds, status, expiry] = await Promise.all([
+          promScalar(gateway, `probe_success{${sel}}`),
+          promScalar(gateway, `probe_duration_seconds{${sel}}`),
+          promScalar(gateway, `probe_http_status_code{${sel}}`),
+          promScalar(gateway, `(probe_ssl_earliest_cert_expiry{${sel}} - time()) / 86400`),
+        ]);
+        return {
+          url: check.url,
+          up: up === null ? null : up === 1,
+          seconds,
+          status: status === null || status === 0 ? null : status,
+          certificateDays: expiry === null ? null : Math.floor(expiry),
+        };
+      }),
+    );
+    // A service that runs elsewhere has nothing else Raion could check.
+    if (svc.runtime.type === 'remote') return result;
+  }
 
   // Databases, caches and proxies: the collector reads their metrics; there are no logs or
   // traces to check.

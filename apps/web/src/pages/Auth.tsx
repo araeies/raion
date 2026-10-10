@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api, type User } from '../api';
 import { ErrorMessage, Field, useSubmit } from '../components';
+import { Icon } from '../ui';
 import { useLoad } from '../useLoad';
 
 const SSO_ERRORS: Record<string, string> = {
@@ -38,53 +39,61 @@ export function LoginPage({ onLogin }: { onLogin: (user: User) => void }) {
   // If the methods cannot be read, offer the password form rather than nothing.
   const passwordForm = methods.state !== 'ready' || methods.data.password;
   return (
-    <main id="main" className="auth">
-      <h1>Sign in to Raion</h1>
-      {ssoError && (
-        <p className="notice notice-error" role="alert">
-          {SSO_ERRORS[ssoError] ?? 'Single sign-on did not work. Please try again.'}
+    <div className="auth-page">
+      <main id="main" className="auth">
+        <div className="auth-brand">
+          <span className="brand-mark" aria-hidden="true">
+            <Icon name="heart" size={17} />
+          </span>
+          Raion
+        </div>
+        <h1>Sign in to Raion</h1>
+        {ssoError && (
+          <p className="notice notice-error" role="alert">
+            {SSO_ERRORS[ssoError] ?? 'Single sign-on did not work. Please try again.'}
+          </p>
+        )}
+        {sso && (
+          <p>
+            <a
+              className="button"
+              href={`/api/v1/auth/oidc/start?next=${encodeURIComponent(nextPath())}`}
+            >
+              Sign in with {sso.displayName}
+            </a>
+          </p>
+        )}
+        {sso && passwordForm && <p className="muted">Or sign in with a Raion password:</p>}
+        {passwordForm && (
+          <form onSubmit={onSubmit} noValidate={false}>
+            <Field
+              id="username"
+              label="Username"
+              autoComplete="username"
+              value={username}
+              onChange={setUsername}
+            />
+            <Field
+              id="password"
+              label="Password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={setPassword}
+            />
+            <ErrorMessage error={error} />
+            <button type="submit" disabled={pending}>
+              {pending ? 'Signing in…' : 'Sign in'}
+            </button>
+          </form>
+        )}
+        <p className="muted">
+          {sso
+            ? `Your account is created the first time you sign in with ${sso.displayName}.`
+            : 'Accounts are created by a Raion admin.'}
         </p>
-      )}
-      {sso && (
-        <p>
-          <a
-            className="button"
-            href={`/api/v1/auth/oidc/start?next=${encodeURIComponent(nextPath())}`}
-          >
-            Sign in with {sso.displayName}
-          </a>
-        </p>
-      )}
-      {sso && passwordForm && <p className="muted">Or sign in with a Raion password:</p>}
-      {passwordForm && (
-        <form onSubmit={onSubmit} noValidate={false}>
-          <Field
-            id="username"
-            label="Username"
-            autoComplete="username"
-            value={username}
-            onChange={setUsername}
-          />
-          <Field
-            id="password"
-            label="Password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={setPassword}
-          />
-          <ErrorMessage error={error} />
-          <button type="submit" disabled={pending}>
-            {pending ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
-      )}
-      <p className="muted">
-        {sso
-          ? `Your account is created the first time you sign in with ${sso.displayName}.`
-          : 'Accounts are created by a Raion admin.'}
-      </p>
-    </main>
+      </main>
+    </div>
   );
 }
 
@@ -112,51 +121,59 @@ export function SetupPage({
     onDone(user);
   });
   return (
-    <main id="main" className="auth">
-      <h1>Welcome to Raion</h1>
-      <p>
-        Create the first administrator account. Admins can invite other people and choose what they
-        are allowed to do.
-      </p>
-      <form onSubmit={onSubmit}>
-        {!initialToken && (
+    <div className="auth-page">
+      <main id="main" className="auth">
+        <div className="auth-brand">
+          <span className="brand-mark" aria-hidden="true">
+            <Icon name="heart" size={17} />
+          </span>
+          Raion
+        </div>
+        <h1>Welcome to Raion</h1>
+        <p>
+          Create the first administrator account. Admins can invite other people and choose what
+          they are allowed to do.
+        </p>
+        <form onSubmit={onSubmit}>
+          {!initialToken && (
+            <Field
+              id="token"
+              label="Setup token"
+              value={token}
+              onChange={setToken}
+              hint="Printed by “raion server” when it started. Use the full link it printed, or paste the token here."
+            />
+          )}
           <Field
-            id="token"
-            label="Setup token"
-            value={token}
-            onChange={setToken}
-            hint="Printed by “raion server” when it started. Use the full link it printed, or paste the token here."
+            id="username"
+            label="Admin username"
+            autoComplete="username"
+            value={username}
+            onChange={setUsername}
           />
-        )}
-        <Field
-          id="username"
-          label="Admin username"
-          autoComplete="username"
-          value={username}
-          onChange={setUsername}
-        />
-        <Field
-          id="password"
-          label="Password"
-          type="password"
-          autoComplete="new-password"
-          value={password}
-          onChange={setPassword}
-          hint="At least 12 characters. A short sentence works well."
-        />
-        <Field
-          id="confirm"
-          label="Repeat password"
-          type="password"
-          autoComplete="new-password"
-          value={confirm}
-          onChange={setConfirm}
-        />
-        <ErrorMessage error={error} />
-        <button type="submit" disabled={pending}>
-          {pending ? 'Creating…' : 'Create admin account'}
-        </button>
-      </form>
-    </main>
+          <Field
+            id="password"
+            label="Password"
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={setPassword}
+            hint="At least 12 characters. A short sentence works well."
+          />
+          <Field
+            id="confirm"
+            label="Repeat password"
+            type="password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={setConfirm}
+          />
+          <ErrorMessage error={error} />
+          <button type="submit" disabled={pending}>
+            {pending ? 'Creating…' : 'Create admin account'}
+          </button>
+        </form>
+      </main>
+    </div>
   );
 }

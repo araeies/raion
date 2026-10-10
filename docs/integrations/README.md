@@ -4,15 +4,16 @@ An **integration** is Raion's knowledge of a technology. It decides how a servic
 
 ## Available integrations
 
-| Integration                    | For                 | How the telemetry arrives                                     | Change to your application                             |
-| ------------------------------ | ------------------- | ------------------------------------------------------------- | ------------------------------------------------------ |
-| [Node.js](nodejs.md)           | Node.js services    | The application sends it (OpenTelemetry, zero-code)           | Add two packages; no code changes                      |
-| [Python](python.md)            | Python services     | The application sends it (OpenTelemetry, zero-code)           | Add packages; start through `opentelemetry-instrument` |
-| [Go](go.md)                    | Go services         | The application sends it (OpenTelemetry SDK)                  | One setup file and a wrapped HTTP handler              |
-| [PostgreSQL](postgresql.md)    | PostgreSQL          | The collector reads it, with a read-only monitoring user      | None                                                   |
-| [Redis](redis.md)              | Redis               | The collector reads it (`INFO`)                               | None                                                   |
-| [Nginx](nginx.md)              | Nginx               | The collector reads `stub_status`                             | Enable `stub_status`                                   |
-| [Docker containers](docker.md) | Any Compose service | Container metrics (cAdvisor); container logs (logging driver) | None                                                   |
+| Integration                    | For                 | How the telemetry arrives                                     | Change to your application                         |
+| ------------------------------ | ------------------- | ------------------------------------------------------------- | -------------------------------------------------- |
+| [Node.js](nodejs.md)           | Node.js services    | The application sends it (OpenTelemetry, zero-code)           | None in Docker Compose; elsewhere add two packages |
+| [Python](python.md)            | Python services     | The application sends it (OpenTelemetry, zero-code)           | None in Docker Compose; elsewhere add packages     |
+| [Java](java.md)                | Java services       | The application sends it (OpenTelemetry Java agent)           | None in Docker Compose; elsewhere add `-javaagent` |
+| [Go](go.md)                    | Go services         | The application sends it (OpenTelemetry SDK)                  | One setup file and a wrapped HTTP handler          |
+| [PostgreSQL](postgresql.md)    | PostgreSQL          | The collector reads it, with a read-only monitoring user      | None                                               |
+| [Redis](redis.md)              | Redis               | The collector reads it (`INFO`)                               | None                                               |
+| [Nginx](nginx.md)              | Nginx               | The collector reads `stub_status`                             | Enable `stub_status`                               |
+| [Docker containers](docker.md) | Any Compose service | Container metrics (cAdvisor); container logs (logging driver) | None                                               |
 
 `raion integrations list` shows the integrations available in a workspace, including your team's own.
 
@@ -52,14 +53,14 @@ Credentials are only accepted as references to [secrets](../15-users-and-securit
 
 ## What each integration gives you
 
-| Integration | Dashboard sections                                          | Alerts                                               | SLOs                                      |
-| ----------- | ----------------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------- |
-| Node.js     | Golden signals, routes, dependencies, runtime, logs, traces | High error rate, high latency, telemetry stopped     | Availability, latency, throughput, custom |
-| Python, Go  | Golden signals, routes, dependencies, logs, traces          | High error rate, high latency, telemetry stopped     | Availability, latency, throughput, custom |
-| PostgreSQL  | Connections, transactions, cache hit ratio, deadlocks, size | Unreachable, connections near limit, deadlocks       | Custom                                    |
-| Redis       | Clients, commands, hit ratio, memory, evictions             | Unreachable, memory near limit, rejected connections | Custom                                    |
-| Nginx       | Requests, connections, dropped connections                  | Unreachable, dropping connections                    | Custom                                    |
-| Containers  | CPU, memory, restarts                                       | –                                                    | –                                         |
+| Integration      | Dashboard sections                                          | Alerts                                               | SLOs                                      |
+| ---------------- | ----------------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------- |
+| Node.js          | Golden signals, routes, dependencies, runtime, logs, traces | High error rate, high latency, telemetry stopped     | Availability, latency, throughput, custom |
+| Python, Java, Go | Golden signals, routes, dependencies, logs, traces          | High error rate, high latency, telemetry stopped     | Availability, latency, throughput, custom |
+| PostgreSQL       | Connections, transactions, cache hit ratio, deadlocks, size | Unreachable, connections near limit, deadlocks       | Custom                                    |
+| Redis            | Clients, commands, hit ratio, memory, evictions             | Unreachable, memory near limit, rejected connections | Custom                                    |
+| Nginx            | Requests, connections, dropped connections                  | Unreachable, dropping connections                    | Custom                                    |
+| Containers       | CPU, memory, restarts                                       | –                                                    | –                                         |
 
 The [Alerts](../09-alerts.md) page lists every alert and when it fires.
 

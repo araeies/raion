@@ -14,7 +14,7 @@ A team with budget left can ship and experiment. A team whose budget is running 
 
 ## Creating an SLO
 
-**In the UI.** Open **SLOs → Create an SLO**, or a service page → **Add an SLO**. Pick what to measure, the objective and the window. Raion writes the SLO to a new file in your workspace (`slos/<service>-<name>.yaml`); apply it from the Observability stack page.
+**In the UI.** Open **Reliability goals → Set a goal**, or an application's **Reliability goals** tab. Pick what to measure, the objective (Raion recommends one) and the window. Raion writes the goal to a new file in your workspace (`slos/<service>-<name>.yaml`); deploy it from the **Observability stack** page. Each goal can be changed or removed from its card (or `raion slo set` and `raion slo remove`).
 
 **On the command line:**
 
@@ -76,7 +76,7 @@ Alerts go where the service's other alerts go: the inbox, the team's receiver at
 
 ## Reading the status
 
-`raion slo list` and the SLOs page show each SLO as:
+`raion slo list` and the **Reliability goals** page show each goal as:
 
 | Status           | Meaning                                                         |
 | ---------------- | --------------------------------------------------------------- |
@@ -102,7 +102,7 @@ What converts in each direction:
 - **Import.** Ratio metrics with Prometheus queries become custom SLIs.
 - **Rejected on import, with the reason:** anything Raion cannot evaluate, such as counters, calendar windows, threshold metrics or other sources. If the imported SLOs would make the workspace invalid, nothing is kept.
 
-The UI shows the same export under **SLOs → Show as OpenSLO**.
+The UI shows the same export on the **Reliability goals** page, under **The same goals in OpenSLO format**.
 
 ## Choosing good SLOs
 

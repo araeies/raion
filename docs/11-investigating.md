@@ -4,29 +4,33 @@ This page walks through finding the cause of a problem with Raion, from the firs
 
 ## 1. The alert
 
-You learn about it from an alert: in the Raion inbox (**Alerts**), and in Slack, email or your webhook if you set them up. Each service alert includes:
+You learn about it from an alert: on the **Alerts** page (and **Home**), and in Slack, email or your webhook if you set them up. On the Alerts page, each alert explains:
 
-- what is wrong, for example "payment-api: 18% of requests are failing"
-- a link to the service's **Grafana dashboard**
-- a link to the service's **Raion page**
-- its **runbook**, if your team wrote one ([runbooks](09-alerts.md#runbooks))
+- what is wrong and where, for example "Many requests are failing" for payment-api, with the current value ("18% of requests are failing")
+- what it means for your users, why it fired, and since when
+- **what to do**: the first steps to take
+- links to the application's **Grafana dashboard** and its **Raion page**, and its **runbook**, if your team wrote one ([runbooks](09-alerts.md#runbooks))
+
+Notifications carry the summary and the same links.
 
 If you are going to work on it, **Silence…** the alert so it stops notifying others, and say why. Everyone sees who silenced it.
 
 **First, check it is real.** If the Alerts page shows **Alerting is broken**, or several services alert at once, the problem may be the monitoring itself. Check [Is Raion itself healthy?](16-raion-health.md) before anything else.
 
-## 2. The service page
+## 2. The application's page
 
-Open **Services → payment-api**:
+Open **Applications → payment-api** (or click its name on the alert). On the **Overview** tab:
 
-- **Health**: requests per second, error rate and p95 latency over the last 5 minutes. Is it errors, slowness, or both? Did traffic change?
-- **Alerts**: everything firing for this service. A latency alert next to the error alert often means a slow dependency.
-- **Service level objectives**: how much error budget is left and how fast it is burning. This tells you how urgent it is (see [SLOs](10-slos.md)).
-- **Dependencies**: what the service calls. A problem there shows up here as errors or slowness.
+- **Health**: requests per second, the share failing and the response time of the slowest 1 in 20 requests, over the last 5 minutes. Is it errors, slowness, or both?
+- **Over time**: the same as charts over the last hour, 6 hours or 24 hours. When did it start? Did traffic change at the same moment? Point at a chart to read the value at any moment.
+- **Alerts**: everything firing for this application, each with what it means and what to do. A slowness alert next to the error alert often means a slow dependency.
+- **Connections**: what it calls and what calls it. A problem there shows up here as errors or slowness.
+
+The **Reliability goals** tab shows how much error budget is left and how fast it is burning, which tells you how urgent it is (see [Reliability goals](10-slos.md)).
 
 ## 3. The service dashboard
 
-**Open the payment-api dashboard in Grafana ↗**. Set the time range to cover the start of the problem.
+**Open dashboard** at the top of its page. Set the time range to cover the start of the problem.
 
 | Row                         | Ask                                                                                                   |
 | --------------------------- | ----------------------------------------------------------------------------------------------------- |
@@ -74,5 +78,5 @@ If several services are affected at once:
 ## Tips
 
 - **Every signal carries the service name** as `service_name`, so the same name finds metrics, logs and traces in Explore.
-- **The service page's Health section** has **Show the queries**: the exact queries behind each number, to continue in Explore.
+- **The application's Overview tab** has **The queries behind these numbers**: the exact queries behind each number, to continue in Explore.
 - **Logs not linked to traces?** The service is below level 2, or its logging library is not instrumented; see the service's [integration](integrations/README.md).

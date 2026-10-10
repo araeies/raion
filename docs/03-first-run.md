@@ -1,6 +1,6 @@
 # First run
 
-This page takes you from nothing to the Raion web UI, signed in as the administrator, with the observability stack running. It takes about fifteen minutes, most of it downloading container images.
+This page takes you from nothing to the Raion web UI, signed in as the administrator, with monitoring running and your first application connected. You type two commands; everything else is done in the web UI. It takes about fifteen minutes, most of it downloading container images.
 
 Make sure Docker is running and the [`raion` command](02-installing.md#the-raion-command) works.
 
@@ -35,31 +35,9 @@ observability/
 └── .gitignore              keeps .raion/ (local state and secrets) out of Git
 ```
 
-Check it:
+Everything after this happens in the web UI. (Prefer the terminal? Each step below has a command too: see [Web UI and command line](reference/ui-and-cli.md).)
 
-```sh
-raion validate observability
-```
-
-`validate` explains any problem with its exact file and line, and suggests fixes ("did you mean `ledger-api`?").
-
-## 2. Deploy the observability stack
-
-```sh
-raion plan observability      # what will be deployed; nothing changes yet
-raion apply observability     # deploy (shows the plan and asks first)
-```
-
-The first `apply` downloads the container images and takes a few minutes. Raion then checks every component: each one must be ready, monitored, and alerting must work. If anything fails, Raion restores the previous state and tells you why.
-
-Confirm the stack works end to end:
-
-```sh
-raion verify observability    # sends a test metric, log line and trace, and finds each in storage
-raion status observability    # every component, its health, and whether alerting works
-```
-
-## 3. Start the Raion server
+## 2. Start Raion
 
 ```sh
 raion server --workspace observability
@@ -76,47 +54,66 @@ No users exist yet. Create the first admin within 30 minutes:
 
 The server also prints a log line for each request; you can ignore those.
 
-## 4. Create the administrator account
+## 3. Create the administrator account
 
 1. Open the **setup link** in your browser. The setup token is filled in for you.
 2. Choose an **admin username** and a **password** of at least 12 characters (that does not contain the username), and repeat it.
-3. Click **Create admin account**. You are signed in.
+3. Click **Create admin account**. You are signed in, on **Home**.
 
-The link works once and for 30 minutes. If it expired, stop the server and start it again to get a new one.
+The link works once and for 30 minutes. If it expired, stop the server and start it again to get a new one. Next time, sign in at **<http://127.0.0.1:7600>**.
 
-## 5. Open the web UI
+## 4. Start monitoring
 
-Go to **<http://127.0.0.1:7600>**. Next time, sign in there with your username and password.
+**Home** shows a short **Get set up** checklist. Its first open step is **Start monitoring**:
 
-You land on **Services**. The bar at the top takes you to the rest of Raion:
+1. Click **Open the observability stack**. Its **Changes to deploy** tab shows what Raion will run, in plain words.
+2. Click **Deploy and start monitoring**. The first time, Raion downloads the monitoring tools, which takes a few minutes; the progress is shown live.
+3. Raion checks every tool: each must be ready, monitored, and alerting must work. If anything fails, Raion puts back what was there before and tells you why. Nothing is left half-done.
 
-| Menu item               | What it is for                                                               |
-| ----------------------- | ---------------------------------------------------------------------------- |
-| **Services**            | Every service, its health, alerts, SLOs, dependencies and how to connect it  |
-| **SLOs**                | Reliability targets and their error budgets; create new SLOs                 |
-| **Alerts**              | What is firing now, silences, recent history, and whether alerting works     |
-| **Advisor**             | Gaps in your observability, and fixes                                        |
-| **Integrations**        | What Raion can monitor, and how to set up each integration                   |
-| **Observability stack** | Health of the components, pending changes, generated configuration, releases |
-| **Users** (admins)      | Accounts, roles, password resets and everyone's API tokens                   |
-| **Audit log** (admins)  | Who did what, and when                                                       |
-| **Grafana ↗**           | Dashboards and exploration, already signed in                                |
+When it is done, **Test the pipeline** sends a test measurement, log line and trace and checks each one arrives.
 
-The [tour of the web UI](04-ui-tour.md) explains each page.
+## 5. Add and connect your application
 
-## 6. Invite your colleagues (optional)
+Your workspace already has the application you described in `raion init`. To add another, click **Add an application**: Raion asks its name, where it runs (and lists the containers running on this machine, so you can pick yours), and what kind it is, then shows what it recommends. Click **Set this up for me**.
 
-Go to **Users**, fill in **Add a user** (username, initial password, role) and share the password with them privately. Roles:
+Then open the application's **Connect** tab:
+
+- **Already running here in Docker Compose?** Click **Connect it for me** (admins). Raion shows exactly what it will change, then restarts it with its settings. Your compose files are not changed.
+- **Not running yet, or elsewhere?** The tab gives the steps, with commands to copy.
+- **Running somewhere Raion cannot reach inside** (a cloud service, another server)? Raion watches it from outside, by its web address.
+
+Within a minute, its **Overview** tab shows data arriving. See [Connecting an application](05-connecting-a-service.md).
+
+## 6. Get notified (optional)
+
+Every alert appears on the **Alerts** page. To also get them by Slack, email or webhook, go to **Settings → Notifications → Add a notification channel**, then deploy from **Observability stack**.
+
+## 7. Invite your colleagues (optional)
+
+Go to **People → Add a person** (username, initial password, role) and share the password with them privately. Roles:
 
 - **viewer**: sees everything
-- **editor**: also creates SLOs, applies advisor fixes, silences alerts, deploys changes
-- **admin**: also manages users and secrets, and approves sensitive changes
+- **editor**: also adds and changes applications and reliability goals, applies Advisor fixes, silences alerts, deploys changes
+- **admin**: also manages people, secrets and workspace settings, connects running applications, and approves sensitive changes
 
 The server only accepts connections from this machine. To let colleagues use it from their own computers, see [Serving Raion to your team](15-users-and-security.md#serving-raion-to-your-team).
+
+## The same from the terminal
+
+Everything above can also be done with commands, for scripts and CI/CD:
+
+```sh
+raion validate observability              # check the workspace
+raion apply observability                 # start monitoring (shows the plan and asks first)
+raion verify observability                # test the pipeline
+raion services add ledger-api --type api --language nodejs -w observability
+raion connect observability --restart ledger-api
+raion users add alex --role editor -w observability
+```
 
 ## Stopping and starting again
 
 - **The web UI:** Ctrl+C in the server's terminal; `raion server --workspace observability` to start it again.
-- **The observability stack** keeps running in Docker when the web UI is stopped. `raion destroy observability` stops it (your stored data is kept); `raion apply observability` starts it again.
+- **Monitoring** keeps running in Docker when the web UI is stopped. **Observability stack → Advanced → Stop monitoring** (or `raion destroy observability`) stops it; your stored data is kept. **Deploy and start monitoring** (or `raion apply observability`) starts it again.
 
 Next: [A tour of the web UI](04-ui-tour.md).

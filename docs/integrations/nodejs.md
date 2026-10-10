@@ -4,11 +4,11 @@ Connects Node.js services to the observability stack **without changing their co
 
 ## What you get
 
-| Signal  | What                                                                                                                                                          | Where to look                                       |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Metrics | Request rate, errors and latency for every HTTP route (`http_server_request_duration_seconds`), outgoing HTTP calls, Node.js runtime (event loop, GC, memory) | Prometheus / Grafana, and the service page in Raion |
-| Traces  | One trace per request, following calls into your other services and into databases, Redis and HTTP APIs                                                       | Tempo / Grafana                                     |
-| Logs    | Everything logged with **pino**, **winston** or **bunyan**, with the `trace_id` and `span_id` of the request that wrote it                                    | Loki / Grafana                                      |
+| Signal  | What                                                                                                                                                          | Where to look                                             |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Metrics | Request rate, errors and latency for every HTTP route (`http_server_request_duration_seconds`), outgoing HTTP calls, Node.js runtime (event loop, GC, memory) | Prometheus / Grafana, and the application's page in Raion |
+| Traces  | One trace per request, following calls into your other services and into databases, Redis and HTTP APIs                                                       | Tempo / Grafana                                           |
+| Logs    | Everything logged with **pino**, **winston** or **bunyan**, with the `trace_id` and `span_id` of the request that wrote it                                    | Loki / Grafana                                            |
 
 Because log lines carry the trace ID, you can jump from a slow trace to the logs it wrote, and from an error log to the full request.
 
@@ -32,7 +32,22 @@ This integration uses OpenTelemetry's [zero-code instrumentation for Node.js](ht
 
 Run `raion connect --service <name> --format env` to see the exact values for your service.
 
-## Setup
+## Without rebuilding your image
+
+For applications in Docker Compose, Raion can add OpenTelemetry when the container starts instead: you install nothing and your image stays as it is. **Add an application** in the web UI does this for you when you choose Docker Compose and Node.js. In a workspace file:
+
+```yaml
+integrations:
+  - name: nodejs
+    params:
+      injectAgent: true
+```
+
+A small helper container copies the agent from Raion's pinned OpenTelemetry image into a shared, read-only volume, and `NODE_OPTIONS` loads it (`--require /otel-auto-instrumentation/autoinstrumentation.js`). The helper has no network access and no privileges. Then restart the application with Raion's settings: **Connect it for me** on its **Connect** tab, or `raion connect --restart <name>`. The setup below is then not needed.
+
+The injected agent instruments CommonJS applications; for an application written with ES modules (`"type": "module"`), install the packages as below instead.
+
+## Setup (installing the packages yourself)
 
 1. Add the packages to your application and rebuild it:
 
@@ -61,9 +76,10 @@ integrations:
       esmHook: true # default
 ```
 
-| Parameter | Default | Meaning                                                                                                                                                                                                |
-| --------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `esmHook` | `true`  | Also instrument ES modules. Needed for `"type": "module"` apps and harmless for CommonJS. Turn it off only if `@opentelemetry/instrumentation` cannot be resolved from your app (see Troubleshooting). |
+| Parameter     | Default | Meaning                                                                                                                                                                                                |
+| ------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `injectAgent` | `false` | Add OpenTelemetry when the container starts instead of installing packages (Docker Compose only). See [Without rebuilding your image](#without-rebuilding-your-image).                                 |
+| `esmHook`     | `true`  | Also instrument ES modules. Needed for `"type": "module"` apps and harmless for CommonJS. Turn it off only if `@opentelemetry/instrumentation` cannot be resolved from your app (see Troubleshooting). |
 
 ## Customizing
 

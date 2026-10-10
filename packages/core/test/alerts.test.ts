@@ -88,7 +88,7 @@ describe('alert rules', () => {
       'raion-platform',
     ]);
     const java = resolved(
-      '  services:\n    - name: batch\n      type: worker\n      language: java\n',
+      '  services:\n    - name: batch\n      type: worker\n      language: php\n',
     );
     expect(ruleArtifacts({ ws: java, hostMetrics: false }).groups.map((g) => g.name)).toEqual([
       'raion-platform',
@@ -198,5 +198,68 @@ describe('alert routing', () => {
       `${SERVICE}      runbooks:\n        - alert: HighErrors\n          url: https://x.example.com\n`,
     );
     expect(runbook.diagnostics.map((d) => d.code)).toEqual([CODES.RUNBOOK_UNKNOWN_ALERT]);
+  });
+});
+
+describe('alert guides', () => {
+  it('explains every alert Raion can generate, in plain words', () => {
+    const ws = resolved(`  level: 3
+  services:
+    - name: shop
+      type: api
+      language: nodejs
+      tier: critical
+      slos:
+        - name: availability
+          sli: { type: availability }
+          target: 99.9
+          window: 30d
+    - name: orders-db
+      type: database
+      integrations:
+        - name: postgresql
+          params: { endpoint: 'orders-db:5432', password: '\${secret:PG}' }
+    - name: cache
+      type: database
+      integrations:
+        - name: redis
+          params: { endpoint: 'cache:6379' }
+    - name: edge
+      type: web
+      integrations:
+        - name: nginx
+          params: { endpoint: 'http://edge:8080/status' }
+`);
+    const alerts = generateRuntime(ws).alerts;
+    const names = new Set(alerts.map((a) => a.alert));
+    for (const expected of [
+      'Watchdog',
+      'ServiceHighErrorRate',
+      'ServiceTelemetryMissing',
+      'SLOErrorBudgetBurnFast',
+      'SLOErrorBudgetExhausted',
+      'ServiceUnreachable',
+      'PostgresDeadlocks',
+      'RedisMemoryNearLimit',
+      'NginxDroppingConnections',
+      'HostDiskAlmostFull',
+      'RaionComponentDown',
+    ]) {
+      expect(names).toContain(expected);
+    }
+    for (const a of alerts) {
+      expect(a.title, a.alert).not.toBe(a.alert);
+      expect(a.meaning.length, a.alert).toBeGreaterThan(20);
+      expect(a.condition.length, a.alert).toBeGreaterThan(10);
+      expect(a.action.length, a.alert).toBeGreaterThan(0);
+      expect(a.expr, a.alert).toBeTruthy();
+      // Guides are for people; Prometheus never sees them.
+    }
+    const rules = generateRuntime(ws).artifacts.filter((f) =>
+      f.path.startsWith('prometheus/rules/'),
+    );
+    for (const f of rules) expect(f.content).not.toContain('guide');
+    expect(alerts.find((a) => a.alert === 'Watchdog')!.title).toBe('Alerting self-test');
+    expect(alerts.find((a) => a.alert === 'SLOErrorBudgetBurnFast')!.scope).toBe('slo');
   });
 });

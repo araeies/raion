@@ -130,6 +130,7 @@ services:
       GF_PLUGINS_PREINSTALL_DISABLED: "true"
       GF_NEWS_NEWS_FEED_ENABLED: "false"
       GF_LOG_LEVEL: warn
+      GF_UNIFIED_ALERTING_ENABLED: "false"
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/raion/raion-overview.json
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro

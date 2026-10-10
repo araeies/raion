@@ -9,6 +9,7 @@ import {
   secretStatus,
   setSecret,
   StatePaths,
+  WATCHDOG_ALERT,
 } from '@raion/deploy';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -48,12 +49,37 @@ export function registerAlertRoutes(
     await inbox.refresh().catch(() => undefined);
     const filter = query.service ? { service: query.service } : {};
     const ctx = await runtime.context();
+    const catalog = ctx?.bundle.alerts ?? [];
+    // The explanation of an alert: the generated rule with the same name, service and SLO.
+    const ruleFor = (alertname: string, labels: Record<string, string>) =>
+      catalog.find(
+        (r) =>
+          r.alert === alertname &&
+          (r.service ?? '') === (labels.service_name ?? r.service ?? '') &&
+          (r.slo ?? '') === (labels.slo ?? r.slo ?? ''),
+      ) ??
+      catalog.find((r) => r.alert === alertname) ??
+      null;
+    const explain = <T extends { alertname: string; labels: Record<string, string> }>(a: T) => ({
+      ...a,
+      rule: ruleFor(a.alertname, a.labels),
+    });
+    const health = inbox.health() ?? null;
     return {
       deployed: Boolean(ctx?.target.releases.currentId()),
-      health: inbox.health() ?? null,
-      firing: inbox.store.listAlerts({ open: true, limit: 200, ...filter }),
-      resolved: inbox.store.listAlerts({ open: false, limit: 50, ...filter }),
-      rules: ctx?.bundle.alerts.filter((a) => !query.service || a.service === query.service) ?? [],
+      health,
+      /** The always-firing self-test that proves alerting works; never listed as an alert. */
+      selfTest: {
+        firing: health?.watchdogReceived ?? false,
+        rule: catalog.find((r) => r.alert === WATCHDOG_ALERT) ?? null,
+      },
+      firing: inbox.store.listAlerts({ open: true, limit: 200, ...filter }).map(explain),
+      pending: inbox
+        .pending()
+        .filter((a) => !query.service || a.labels.service_name === query.service)
+        .map(explain),
+      resolved: inbox.store.listAlerts({ open: false, limit: 50, ...filter }).map(explain),
+      rules: catalog.filter((a) => !query.service || a.service === query.service),
     };
   });
 

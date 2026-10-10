@@ -1,8 +1,72 @@
 import { useEffect, useState } from 'react';
-import { runtimeApi, type Job, type RuntimeOverview, type User } from '../api';
-import { Disclosure, ErrorMessage } from '../components';
+import { runtimeApi, type Job, type JobSummary, type RuntimeOverview, type User } from '../api';
+import { ErrorMessage } from '../components';
+import {
+  dateTime,
+  duration,
+  EmptyState,
+  Explain,
+  Icon,
+  InfoTip,
+  Loading,
+  PageHeader,
+  Pill,
+  Technical,
+  timeAgo,
+  type Tone,
+} from '../ui';
 import { useLoad } from '../useLoad';
 import { SecretsSection } from './Alerts';
+
+/** What each component is, in plain words. */
+const COMPONENTS: Record<string, { name: string; role: string }> = {
+  'otel-collector': {
+    name: 'Collector',
+    role: "Receives your applications' metrics, logs and traces, and passes them on for storage.",
+  },
+  prometheus: {
+    name: 'Metrics storage',
+    role: 'Keeps numbers over time (requests, errors, response times) and checks the alert rules.',
+  },
+  loki: { name: 'Log storage', role: "Keeps your applications' log lines, searchable by time." },
+  tempo: {
+    name: 'Trace storage',
+    role: 'Keeps traces: the path of each request through your applications, step by step.',
+  },
+  grafana: { name: 'Dashboards', role: 'Shows charts of everything Raion collects.' },
+  alertmanager: {
+    name: 'Alert delivery',
+    role: 'Groups alerts and sends them to Slack, email or webhooks, if you set any up.',
+  },
+  'node-exporter': {
+    name: 'Machine monitor',
+    role: "Measures this machine's processor, memory, disk and network.",
+  },
+  cadvisor: { name: 'Container monitor', role: 'Measures the CPU and memory of each container.' },
+  gateway: {
+    name: 'Secure gateway',
+    role: 'The only way into the stack. Only Raion holds its key.',
+  },
+};
+
+const OPERATION_LABEL: Record<Job['kind'], string> = {
+  apply: 'Deploy',
+  rollback: 'Roll back',
+  repair: 'Restore',
+  destroy: 'Stop',
+  verify: 'Pipeline test',
+  connect: 'Connect an application',
+};
+
+const STATE_TONE: Record<Job['state'], { tone: Tone; label: string }> = {
+  running: { tone: 'info', label: 'Running' },
+  succeeded: { tone: 'ok', label: 'Succeeded' },
+  failed: { tone: 'crit', label: 'Failed' },
+  interrupted: { tone: 'warn', label: 'Interrupted' },
+};
+
+const where = (via: Job['via']) =>
+  via === 'cli' ? 'command line' : via === 'api' ? 'API' : 'web UI';
 
 const ACTION_LABEL: Record<string, string> = {
   add: 'will start',
@@ -11,215 +75,217 @@ const ACTION_LABEL: Record<string, string> = {
   restart: 'will restart',
 };
 
+type Tab = 'components' | 'changes' | 'activity' | 'releases' | 'secrets' | 'advanced';
+
 export function RuntimePage({ user }: { user: User }) {
-  const overview = useLoad(() => runtimeApi.overview(), 'runtime');
+  const overview = useLoad(() => runtimeApi.overview(), 'runtime', { keepPrevious: true });
   const [startedJob, setJobId] = useState<string | null>(null);
-  // Show a job someone else started, too (the server runs one at a time).
+  const [tab, setTab] = useState<Tab>('components');
+  const [activityTick, setActivityTick] = useState(0);
+  // Also follow an operation started elsewhere (another person, or the CLI).
   const jobId = startedJob ?? (overview.state === 'ready' ? overview.data.runningJob : null);
 
-  if (overview.state === 'loading') return <p aria-busy="true">Loading the observability stack…</p>;
+  if (overview.state === 'loading') return <Loading label="Checking the observability stack…" />;
   if (overview.state === 'error')
-    return <p role="alert">Could not load the runtime: {overview.error.message}</p>;
+    return (
+      <p className="notice notice-error" role="alert">
+        Could not load the observability stack: {overview.error.message}
+      </p>
+    );
   const data = overview.data;
-  const canEdit = user.role === 'editor' || user.role === 'admin';
+  const canEdit = user.role !== 'viewer';
+  const isAdmin = user.role === 'admin';
+  const busy = jobId !== null;
+  const pending = !data.plan.noChanges || !data.status.deployed;
+
+  const tabs: { id: Tab; label: string; show: boolean }[] = [
+    { id: 'components', label: 'Components', show: true },
+    { id: 'changes', label: pending ? 'Changes to deploy •' : 'Changes to deploy', show: true },
+    { id: 'activity', label: 'Activity', show: true },
+    { id: 'releases', label: `Releases (${data.releases.length})`, show: data.releases.length > 0 },
+    { id: 'secrets', label: 'Secrets', show: isAdmin },
+    { id: 'advanced', label: 'Advanced', show: true },
+  ];
 
   return (
     <>
-      <h1>Observability stack</h1>
-      <p className="lead">
-        These open-source components collect, store and display your telemetry. Raion generates
-        their configuration from your workspace and keeps them running.
-      </p>
-      <StatusBanner data={data} />
+      <PageHeader
+        title="Observability stack"
+        description="The open-source tools Raion runs for you to collect, store and show your monitoring data. Raion sets them up from your workspace and keeps them healthy."
+        actions={
+          <>
+            {canEdit && data.status.deployed && (
+              <VerifyButton onStarted={setJobId} disabled={busy} />
+            )}
+            {data.status.deployed && (
+              <a className="button secondary" href={data.grafanaUrl} target="_blank" rel="noopener">
+                <Icon name="chart" /> Open dashboards
+              </a>
+            )}
+          </>
+        }
+      />
 
-      <div className="actions">
-        {data.status.deployed && (
-          <a className="button" href={data.grafanaUrl} target="_blank" rel="noopener">
-            Open Grafana
-          </a>
-        )}
-        {canEdit && data.status.deployed && (
-          <VerifyButton onStarted={setJobId} disabled={jobId !== null} />
-        )}
-      </div>
-
-      {data.drift.items.length > 0 && (
-        <DriftNotice
-          drift={data.drift}
-          canRepair={canEdit && jobId === null}
-          onStarted={setJobId}
-        />
-      )}
+      <StatusCard data={data} />
 
       {jobId && (
         <JobPanel
           id={jobId}
           onDone={() => {
             setJobId(null);
+            setActivityTick((t) => t + 1);
             overview.reload();
           }}
         />
       )}
 
-      {data.status.deployed && data.dashboards.length > 0 && (
-        <section aria-labelledby="dashboards-title">
-          <h2 id="dashboards-title">Dashboards</h2>
-          <p className="muted">
-            Generated from your services and kept up to date on every apply. They open in Grafana;
-            you are signed in automatically.
-          </p>
-          <ul className="dashboard-list">
-            {data.dashboards.map((d) => (
-              <li key={d.uid}>
-                <a href={d.url} target="_blank" rel="noopener">
-                  {d.title}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </section>
+      {data.drift.items.length > 0 && (
+        <DriftNotice drift={data.drift} canRepair={canEdit && !busy} onStarted={setJobId} />
       )}
 
-      <section aria-labelledby="components-title">
-        <h2 id="components-title">Components</h2>
-        <table>
-          <caption className="visually-hidden">Components of the observability stack</caption>
-          <thead>
-            <tr>
-              <th scope="col">Component</th>
-              <th scope="col">What it does</th>
-              <th scope="col">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.components.map((c) => {
-              const s = data.status.components.find((x) => x.component === c.id);
-              const ok = s?.state === 'running' && s.ready !== false;
-              return (
-                <tr key={c.id}>
-                  <th scope="row">{c.id}</th>
-                  <td>
-                    {c.purpose}
-                    {c.privileges.length > 0 && (
-                      <div className="hint">Needs: {c.privileges.join('; ')}</div>
-                    )}
-                  </td>
-                  <td>
-                    <span className={`badge ${ok ? 'badge-ok' : 'badge-error'}`}>
-                      {s
-                        ? ok
-                          ? 'healthy'
-                          : s.ready === false
-                            ? 'not ready'
-                            : s.state
-                        : 'not deployed'}
-                    </span>
-                    {!ok && s?.detail && <div className="hint">{s.detail.split('\n')[0]}</div>}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </section>
+      <div
+        className="tabs"
+        role="tablist"
+        aria-label="Observability stack"
+        style={{ marginTop: 24 }}
+      >
+        {tabs
+          .filter((t) => t.show)
+          .map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              id={`tab-${t.id}`}
+              aria-selected={tab === t.id}
+              aria-controls={`panel-${t.id}`}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+      </div>
 
-      {data.status.scrapeTargets && (
-        <section aria-labelledby="scrape-title">
-          <h2 id="scrape-title">Monitoring of the stack itself</h2>
-          <p className="muted">
-            Prometheus checks every component every 15 seconds. If a check fails, the monitoring
-            itself is broken.
-          </p>
-          <ul className="target-list">
-            {data.status.scrapeTargets.map((t) => (
-              <li key={t.job}>
-                <span className={`badge ${t.health === 'up' ? 'badge-ok' : 'badge-error'}`}>
-                  {t.health}
-                </span>{' '}
-                {t.job}
-                {t.lastError && <span className="hint"> — {t.lastError}</span>}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <PlanSection data={data} user={user} disabled={jobId !== null} onStarted={setJobId} />
-
-      {user.role === 'admin' && <SecretsSection />}
-
-      <section aria-labelledby="config-title">
-        <h2 id="config-title">Generated configuration</h2>
-        <p className="muted">
-          Standard configuration files for each tool. They are generated from your workspace; to
-          change them, change the workspace and apply.
-        </p>
-        {data.files.map((f) => (
-          <GeneratedFile key={f.path} path={f.path} description={f.description} />
-        ))}
-      </section>
-
-      {data.releases.length > 0 && (
-        <section aria-labelledby="releases-title">
-          <h2 id="releases-title">Releases</h2>
-          <p className="muted">
-            Every apply is kept, so a previous configuration can be restored with{' '}
-            <code>raion rollback</code>.
-          </p>
-          <ul>
-            {data.releases.map((r) => (
-              <li key={r.id}>
-                <code>{r.id}</code> — {new Date(r.createdAt).toLocaleString()} by {r.createdBy}
-                {r.id === data.status.deployed?.id && <strong> (deployed)</strong>}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <section aria-labelledby="connect-title">
-        <h2 id="connect-title">Sending telemetry</h2>
-        <p>Applications on this machine send OpenTelemetry data (OTLP) to:</p>
-        <ul>
-          <li>
-            gRPC: <code>{data.otlp.grpc}</code>
-          </li>
-          <li>
-            HTTP: <code>{data.otlp.http}</code>
-          </li>
-        </ul>
-        <p className="muted">
-          Applications in Docker Compose join the <code>{data.ingestNetwork}</code> network and use{' '}
-          <code>otel-collector:4317</code>.
-        </p>
-      </section>
+      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+        {tab === 'components' && <Components data={data} />}
+        {tab === 'changes' && (
+          <PlanSection data={data} user={user} disabled={busy} onStarted={setJobId} />
+        )}
+        {tab === 'activity' && <Activity key={activityTick} />}
+        {tab === 'releases' && (
+          <Releases data={data} canRollBack={canEdit && !busy} onStarted={setJobId} />
+        )}
+        {tab === 'secrets' && <SecretsSection />}
+        {tab === 'advanced' && (
+          <Advanced data={data} isAdmin={isAdmin} busy={busy} onStarted={setJobId} />
+        )}
+      </div>
     </>
   );
 }
 
-function StatusBanner({ data }: { data: RuntimeOverview }) {
-  if (!data.status.deployed) {
+function StatusCard({ data }: { data: RuntimeOverview }) {
+  const deployed = data.status.deployed;
+  if (!deployed) {
     return (
-      <div className="notice notice-warning">
-        <h2>Not deployed yet</h2>
-        <p>Review the changes below and apply them to start the observability stack.</p>
+      <div className="notice notice-info callout">
+        <Icon name="rocket" />
+        <div>
+          <strong>Raion is not running yet.</strong> Open <em>Changes to deploy</em> below and
+          deploy: Raion downloads and starts the tools (the first time takes a few minutes) and
+          checks each one works.
+        </div>
       </div>
     );
   }
-  return data.status.healthy ? (
-    <div className="notice notice-ok">
-      <h2>Healthy</h2>
-      <p>
-        Release <code>{data.status.deployed.id}</code> is running and every component is ready.
-      </p>
+  const healthy = data.status.healthy;
+  return (
+    <div
+      className={`notice ${healthy ? 'notice-ok' : 'notice-error'} callout`}
+      role={healthy ? undefined : 'alert'}
+    >
+      <Icon name={healthy ? 'ok' : 'alert'} />
+      <div style={{ flex: 1 }}>
+        <div className="spread">
+          <strong>{healthy ? 'Everything is running' : 'Something needs attention'}</strong>
+          <Pill tone={healthy ? 'ok' : 'crit'} live={healthy}>
+            {healthy ? 'Healthy' : 'Unhealthy'}
+          </Pill>
+        </div>
+        <p style={{ margin: '4px 0 0' }}>
+          {healthy
+            ? 'Every component is running and ready.'
+            : 'At least one component is not running or not ready. The Components tab shows which.'}{' '}
+          <span className="muted">
+            Release <code>{deployed.id}</code>, deployed {timeAgo(deployed.createdAt)} by{' '}
+            {deployed.createdBy}.
+          </span>
+        </p>
+      </div>
     </div>
-  ) : (
-    <div className="notice notice-error" role="alert">
-      <h2>Something is wrong</h2>
-      <p>
-        At least one component is not running or not ready. Details are in the table below and in{' '}
-        <code>raion status</code>.
-      </p>
+  );
+}
+
+function Components({ data }: { data: RuntimeOverview }) {
+  return (
+    <div className="stack">
+      <div className="grid">
+        {data.components.map((c) => {
+          const s = data.status.components.find((x) => x.component === c.id);
+          const ok = s?.state === 'running' && s.ready !== false;
+          const info = COMPONENTS[c.id];
+          return (
+            <div className="card" key={c.id}>
+              <div className="spread">
+                <strong>{info?.name ?? c.id}</strong>
+                <Pill tone={!s ? 'neutral' : ok ? 'ok' : 'crit'}>
+                  {!s ? 'Not started' : ok ? 'Healthy' : s.ready === false ? 'Not ready' : s.state}
+                </Pill>
+              </div>
+              <p className="small muted" style={{ margin: '6px 0 0' }}>
+                {info?.role ?? c.purpose}
+              </p>
+              {!ok && s?.detail && (
+                <p className="small" style={{ margin: '8px 0 0', color: 'var(--crit)' }}>
+                  {s.detail.split('\n')[0]}
+                </p>
+              )}
+              <Technical>
+                <p className="small" style={{ margin: 0 }}>
+                  <code>{c.id}</code>: {c.purpose}
+                </p>
+                {c.privileges.length > 0 && (
+                  <p className="small" style={{ margin: '6px 0 0' }}>
+                    Extra access it needs: {c.privileges.join('; ')}
+                  </p>
+                )}
+              </Technical>
+            </div>
+          );
+        })}
+      </div>
+      {data.status.scrapeTargets && (
+        <section className="card" aria-labelledby="scrape-title">
+          <div className="card-header">
+            <h2 id="scrape-title">
+              Raion watching itself{' '}
+              <InfoTip label="self-monitoring">
+                Raion's metrics storage checks every component every 15 seconds. If a check fails,
+                part of the monitoring itself is broken, and Raion raises an alert.
+              </InfoTip>
+            </h2>
+          </div>
+          <div className="row">
+            {data.status.scrapeTargets.map((t) => (
+              <span key={t.job} title={t.lastError || undefined}>
+                <Pill tone={t.health === 'up' ? 'ok' : 'crit'}>
+                  {COMPONENTS[t.job]?.name ?? t.job}
+                </Pill>
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -238,6 +304,7 @@ function PlanSection(props: {
   const gated = plan.securityRelevant.length > 0 || plan.dataAffecting.length > 0;
   const isAdmin = props.user.role === 'admin';
   const canApply = props.user.role !== 'viewer' && (!gated || isAdmin);
+  const deployed = Boolean(props.data.status.deployed);
 
   const apply = async () => {
     setError(null);
@@ -249,110 +316,435 @@ function PlanSection(props: {
     }
   };
 
+  if (plan.noChanges && deployed) {
+    return (
+      <EmptyState icon="ok" title="Nothing to deploy">
+        What is running matches your workspace. When you change something (add an application, a
+        reliability goal, a notification channel), the changes appear here.
+      </EmptyState>
+    );
+  }
+
   return (
-    <section aria-labelledby="plan-title">
-      <h2 id="plan-title">Pending changes</h2>
-      {plan.noChanges && props.data.status.deployed ? (
-        <p>The deployed configuration matches your workspace.</p>
-      ) : (
-        <>
-          {changed.length > 0 && (
-            <ul>
-              {changed.map((c) => (
-                <li key={c.component}>
-                  <strong>{c.component}</strong> {ACTION_LABEL[c.action] ?? c.action}
-                  {c.reasons.length > 0 && <span className="muted"> — {c.reasons.join(', ')}</span>}
-                </li>
-              ))}
-            </ul>
-          )}
-          <Disclosure summary={`Show ${plan.files.length} changed file(s)`}>
-            <ul>
-              {plan.files.map((f) => (
-                <li key={f.path}>
-                  <code>
-                    {f.change === 'add' ? '+' : f.change === 'remove' ? '-' : '~'} {f.path}
-                  </code>{' '}
-                  <span className="muted">{f.description}</span>
-                </li>
-              ))}
-            </ul>
-          </Disclosure>
-        </>
+    <section className="card" aria-labelledby="plan-title">
+      <div className="card-header">
+        <div>
+          <h2 id="plan-title">{deployed ? 'Changes to deploy' : 'Start monitoring'}</h2>
+          <span className="muted small">
+            {deployed
+              ? 'Your workspace changed since the last deployment. Deploying applies these changes.'
+              : 'Deploying starts these components on this machine.'}
+          </span>
+        </div>
+      </div>
+      {changed.length > 0 && (
+        <ul className="checklist">
+          {changed.map((c) => (
+            <li key={c.component}>
+              <Icon name="box" />
+              <div>
+                <strong>{COMPONENTS[c.component]?.name ?? c.component}</strong>{' '}
+                {ACTION_LABEL[c.action] ?? c.action}
+                {c.reasons.length > 0 && <div className="small muted">{c.reasons.join(', ')}</div>}
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
-      {plan.hostAccess.length > 0 && (
-        <p className="muted">
-          Host access (read-only, for host metrics): {plan.hostAccess.join('; ')}
-        </p>
-      )}
+      <Technical summary={`Changed configuration files (${plan.files.length})`}>
+        <ul className="small" style={{ margin: 0, paddingLeft: '1.2em' }}>
+          {plan.files.map((f) => (
+            <li key={f.path}>
+              <code>
+                {f.change === 'add' ? '+' : f.change === 'remove' ? '−' : '~'} {f.path}
+              </code>{' '}
+              <span className="muted">{f.description}</span>
+            </li>
+          ))}
+        </ul>
+      </Technical>
       {plan.notes.map((n, i) => (
-        <p key={i} className={n.severity === 'warning' ? 'warning-text' : 'muted'}>
+        <p key={i} className={`small ${n.severity === 'warning' ? '' : 'muted'}`}>
           {n.message}
         </p>
       ))}
+      {plan.hostAccess.length > 0 && (
+        <Explain summary="Why does Raion read this machine?">
+          <p>
+            To measure the machine's processor, memory and disk, one component reads (never
+            changes): {plan.hostAccess.join('; ')}.
+          </p>
+        </Explain>
+      )}
       {plan.securityRelevant.length > 0 && (
-        <div className="notice notice-warning">
-          <h3>Needs elevated privileges</h3>
+        <div className="notice notice-warning" style={{ marginTop: 14 }}>
+          <h3>This needs extra access to the machine</h3>
           <ul>
             {plan.securityRelevant.map((s) => (
               <li key={s}>{s}</li>
             ))}
           </ul>
-          {isAdmin && (
+          {isAdmin ? (
             <label className="checkbox">
               <input
                 type="checkbox"
                 checked={allowPrivileged}
                 onChange={(e) => setAllowPrivileged(e.target.checked)}
-              />{' '}
-              I approve these privileges
+              />
+              I approve this access
             </label>
+          ) : (
+            <p className="small">An admin must approve and deploy this change.</p>
           )}
         </div>
       )}
       {plan.dataAffecting.length > 0 && (
-        <div className="notice notice-warning">
-          <h3>Affects stored data</h3>
+        <div className="notice notice-warning" style={{ marginTop: 14 }}>
+          <h3>This affects stored data</h3>
           <ul>
             {plan.dataAffecting.map((s) => (
               <li key={s}>{s}</li>
             ))}
           </ul>
-          {isAdmin && (
+          {isAdmin ? (
             <label className="checkbox">
               <input
                 type="checkbox"
                 checked={allowDataChanges}
                 onChange={(e) => setAllowDataChanges(e.target.checked)}
-              />{' '}
-              I understand data may be lost
+              />
+              I understand some stored data may be lost
             </label>
+          ) : (
+            <p className="small">An admin must approve and deploy this change.</p>
           )}
         </div>
       )}
-      {gated && !isAdmin && <p className="muted">An admin must apply this change.</p>}
       <ErrorMessage error={error} />
       {canApply && (
-        <button type="button" disabled={props.disabled} onClick={() => void apply()}>
-          {props.data.status.deployed
-            ? plan.noChanges
-              ? 'Re-apply'
-              : 'Apply changes'
-            : 'Deploy the stack'}
-        </button>
+        <div className="row" style={{ marginTop: 16 }}>
+          <button type="button" disabled={props.disabled} onClick={() => void apply()}>
+            <Icon name="rocket" />{' '}
+            {deployed ? 'Deploy these changes' : 'Deploy and start monitoring'}
+          </button>
+          <span className="small muted">
+            Raion checks every configuration file first, and puts the previous version back if
+            anything fails.
+          </span>
+        </div>
       )}
+      <p className="small muted" style={{ marginTop: 12, marginBottom: 0 }}>
+        From a terminal: <code>raion plan</code>, then <code>raion apply</code>.
+      </p>
+    </section>
+  );
+}
+
+/** Deployments, restores and tests from every interface: this page, the API and the CLI. */
+function Activity() {
+  const result = useLoad(() => runtimeApi.jobs(), 'activity');
+  const [open, setOpen] = useState<string | null>(null);
+  if (result.state === 'loading') return <Loading />;
+  if (result.state === 'error') return <ErrorMessage error={result.error} />;
+  const jobs = result.data.jobs;
+  if (jobs.length === 0)
+    return (
+      <EmptyState icon="clock" title="Nothing has run yet">
+        Deployments, restores and pipeline tests appear here, whether they were started on this page
+        or with the <code>raion</code> command.
+      </EmptyState>
+    );
+  return (
+    <div className="stack">
+      <p className="muted small" style={{ margin: 0 }}>
+        Everything that changed or tested the stack, from this page and from the command line (
+        <code>raion activity</code> shows the same list).
+      </p>
+      <div className="table-wrap">
+        <table>
+          <caption className="visually-hidden">Recent operations</caption>
+          <thead>
+            <tr>
+              <th scope="col">What</th>
+              <th scope="col">Result</th>
+              <th scope="col">Who</th>
+              <th scope="col">When</th>
+              <th scope="col">
+                <span className="visually-hidden">Details</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {jobs.map((j) => (
+              <ActivityRow
+                key={j.id}
+                job={j}
+                open={open === j.id}
+                onToggle={() => setOpen(open === j.id ? null : j.id)}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ActivityRow({
+  job,
+  open,
+  onToggle,
+}: {
+  job: JobSummary;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const state = STATE_TONE[job.state];
+  return (
+    <>
+      <tr>
+        <th scope="row">{OPERATION_LABEL[job.kind]}</th>
+        <td>
+          <Pill tone={state.tone}>{state.label}</Pill>
+          {job.error && <div className="small muted">{job.error}</div>}
+        </td>
+        <td>
+          {job.actor}
+          <div className="small muted">from the {where(job.via)}</div>
+        </td>
+        <td className="nowrap">
+          {timeAgo(job.startedAt)}
+          <div className="small muted">
+            {job.finishedAt ? `took ${duration(job.startedAt, job.finishedAt)}` : 'still running'}
+          </div>
+        </td>
+        <td>
+          <button type="button" className="ghost small" aria-expanded={open} onClick={onToggle}>
+            {open ? 'Hide log' : 'Log'}
+          </button>
+        </td>
+      </tr>
+      {open && (
+        <tr>
+          <td colSpan={5}>
+            <JobLog id={job.id} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function JobLog({ id }: { id: string }) {
+  const job = useLoad(() => runtimeApi.job(id), `job:${id}`);
+  if (job.state !== 'ready') return <Loading label="Loading the log…" />;
+  return (
+    <pre className="job-log" style={{ margin: 0 }}>
+      {job.data.log.join('\n') || '(no output)'}
+    </pre>
+  );
+}
+
+function Releases({
+  data,
+  canRollBack,
+  onStarted,
+}: {
+  data: RuntimeOverview;
+  canRollBack: boolean;
+  onStarted: (id: string) => void;
+}) {
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const current = data.status.deployed?.id;
+  return (
+    <section className="card" aria-labelledby="releases-title">
+      <div className="card-header">
+        <div>
+          <h2 id="releases-title">
+            Releases{' '}
+            <InfoTip label="a release">
+              Every deployment is saved as a release: the exact configuration that ran. You can go
+              back to an earlier one if a change caused problems.
+            </InfoTip>
+          </h2>
+          <span className="muted small">Newest first.</span>
+        </div>
+      </div>
+      <ErrorMessage error={error} />
+      <ul className="checklist">
+        {data.releases.map((r) => (
+          <li key={r.id}>
+            <div style={{ flex: 1 }}>
+              <div className="row">
+                <code>{r.id}</code>
+                {r.id === current && <Pill tone="ok">Running now</Pill>}
+              </div>
+              <span className="small muted">
+                {dateTime(r.createdAt)} by {r.createdBy}
+              </span>
+              {confirming === r.id && (
+                <div className="notice notice-warning" style={{ margin: '10px 0 0' }}>
+                  <p>
+                    Raion will run release <code>{r.id}</code> again. Your workspace files are not
+                    changed, so the next deployment brings back what they describe.
+                  </p>
+                  <div className="row">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError(null);
+                        runtimeApi.rollback(r.id).then(({ job }) => {
+                          setConfirming(null);
+                          onStarted(job);
+                        }, setError);
+                      }}
+                    >
+                      Roll back
+                    </button>
+                    <button type="button" className="ghost" onClick={() => setConfirming(null)}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            {canRollBack && r.id !== current && confirming !== r.id && (
+              <button type="button" className="secondary small" onClick={() => setConfirming(r.id)}>
+                Roll back to this
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="small muted" style={{ margin: '12px 0 0' }}>
+        From a terminal: <code>raion rollback --to &lt;release&gt;</code>.
+      </p>
+    </section>
+  );
+}
+
+function Advanced({
+  data,
+  isAdmin,
+  busy,
+  onStarted,
+}: {
+  data: RuntimeOverview;
+  isAdmin: boolean;
+  busy: boolean;
+  onStarted: (id: string) => void;
+}) {
+  return (
+    <div className="stack">
+      <section className="card" aria-labelledby="otlp-title">
+        <div className="card-header">
+          <h2 id="otlp-title">
+            Where applications send data{' '}
+            <InfoTip label="OTLP">
+              OpenTelemetry (OTLP) is the standard way applications send metrics, logs and traces.
+              Raion sets it up for the applications you add; these addresses are for anything else.
+            </InfoTip>
+          </h2>
+        </div>
+        <dl className="properties">
+          <dt>From this machine (gRPC)</dt>
+          <dd>
+            <code>{data.otlp.grpc}</code>
+          </dd>
+          <dt>From this machine (HTTP)</dt>
+          <dd>
+            <code>{data.otlp.http}</code>
+          </dd>
+          <dt>From Docker containers</dt>
+          <dd>
+            <code>otel-collector:4317</code> on the <code>{data.ingestNetwork}</code> network
+          </dd>
+        </dl>
+      </section>
+
+      <section className="card" aria-labelledby="config-title">
+        <div className="card-header">
+          <div>
+            <h2 id="config-title">Generated configuration</h2>
+            <span className="muted small">
+              The standard configuration files Raion writes for each tool, from your workspace. To
+              change them, change your workspace and deploy.
+            </span>
+          </div>
+        </div>
+        {data.files.map((f) => (
+          <GeneratedFile key={f.path} path={f.path} description={f.description} />
+        ))}
+      </section>
+
+      {isAdmin && data.status.deployed && <StopSection busy={busy} onStarted={onStarted} />}
+    </div>
+  );
+}
+
+function StopSection({ busy, onStarted }: { busy: boolean; onStarted: (id: string) => void }) {
+  const [deleteData, setDeleteData] = useState(false);
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState<unknown>(null);
+  return (
+    <section className="card" aria-labelledby="stop-title" style={{ borderColor: '#f3c3be' }}>
+      <div className="card-header">
+        <div>
+          <h2 id="stop-title">Stop monitoring</h2>
+          <span className="muted small">
+            Stops every component. Nothing is monitored and no alerts fire until you deploy again.
+          </span>
+        </div>
+      </div>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={deleteData}
+          onChange={(e) => setDeleteData(e.target.checked)}
+        />
+        <span>
+          Also delete all stored data (metrics, logs, traces and dashboards settings). This cannot
+          be undone.
+        </span>
+      </label>
+      {deleteData && (
+        <div className="field" style={{ marginTop: 10, maxWidth: 360 }}>
+          <label htmlFor="stop-confirm">Type the workspace name to confirm</label>
+          <input id="stop-confirm" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+        </div>
+      )}
+      <ErrorMessage error={error} />
+      <div className="row" style={{ marginTop: 12 }}>
+        <button
+          type="button"
+          className="danger"
+          disabled={busy}
+          onClick={() => {
+            setError(null);
+            runtimeApi
+              .stop(deleteData, deleteData ? confirm : undefined)
+              .then(({ job }) => onStarted(job), setError);
+          }}
+        >
+          {deleteData ? 'Stop and delete data' : 'Stop the stack'}
+        </button>
+        <span className="small muted">
+          From a terminal: <code>raion destroy</code>
+        </span>
+      </div>
     </section>
   );
 }
 
 const DRIFT_LABELS: Record<string, string> = {
-  'file-modified': 'File changed',
-  'file-missing': 'File missing',
-  'file-extra': 'File added',
-  'component-missing': 'Container missing',
-  'component-stopped': 'Container stopped',
-  'component-extra': 'Container added',
-  'image-changed': 'Image changed',
+  'file-modified': 'A configuration file was edited',
+  'file-missing': 'A configuration file is missing',
+  'file-extra': 'An unexpected file was added',
+  'component-missing': 'A component is missing',
+  'component-stopped': 'A component was stopped',
+  'component-extra': 'An unexpected container is running',
+  'image-changed': 'A component runs a different version',
 };
 
 /** Changes made to the running stack outside Raion, and a way to undo them. */
@@ -367,33 +759,36 @@ function DriftNotice({
 }) {
   const [error, setError] = useState<unknown>(null);
   return (
-    <section className="notice notice-error" aria-labelledby="drift-title">
-      <h2 id="drift-title">The running stack differs from release {drift.release}</h2>
-      <p>
-        Something changed outside Raion: a generated file was edited, or a container was stopped,
-        removed or replaced. Changes to your workspace are not listed here; they appear under
-        pending changes.
-      </p>
-      <ul>
-        {drift.items.map((item) => (
-          <li key={`${item.kind}:${item.subject}`}>
-            <strong>{DRIFT_LABELS[item.kind] ?? item.kind}:</strong> <code>{item.subject}</code> —{' '}
-            {item.detail}
-          </li>
-        ))}
-      </ul>
-      {canRepair && (
-        <button
-          type="button"
-          onClick={() => {
-            setError(null);
-            runtimeApi.repair().then(({ job }) => onStarted(job), setError);
-          }}
-        >
-          Restore release {drift.release}
-        </button>
-      )}
-      <ErrorMessage error={error} />
+    <section className="notice notice-warning callout" aria-labelledby="drift-title">
+      <Icon name="alert" />
+      <div style={{ flex: 1 }}>
+        <h2 id="drift-title">Something was changed outside Raion</h2>
+        <p>
+          What is running no longer matches release <code>{drift.release}</code>. Raion can put it
+          back exactly as it was deployed.
+        </p>
+        <ul>
+          {drift.items.map((item) => (
+            <li key={`${item.kind}:${item.subject}`}>
+              <strong>{DRIFT_LABELS[item.kind] ?? item.kind}:</strong>{' '}
+              {COMPONENTS[item.subject]?.name ?? <code>{item.subject}</code>}{' '}
+              <span className="muted small">({item.detail})</span>
+            </li>
+          ))}
+        </ul>
+        {canRepair && (
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              runtimeApi.repair().then(({ job }) => onStarted(job), setError);
+            }}
+          >
+            Restore release {drift.release}
+          </button>
+        )}
+        <ErrorMessage error={error} />
+      </div>
     </section>
   );
 }
@@ -412,18 +807,20 @@ function VerifyButton({
         type="button"
         className="secondary"
         disabled={disabled}
+        title="Sends a test metric, log line and trace, and checks each one is stored"
         onClick={() => {
           setError(null);
           runtimeApi.verify().then(({ job }) => onStarted(job), setError);
         }}
       >
-        Test the pipeline
+        <Icon name="check" /> Test the pipeline
       </button>
       <ErrorMessage error={error} />
     </>
   );
 }
 
+/** Follows an operation while it runs, wherever it was started. */
 function JobPanel({ id, onDone }: { id: string; onDone: () => void }) {
   const [job, setJob] = useState<Job | null>(null);
   useEffect(() => {
@@ -444,29 +841,40 @@ function JobPanel({ id, onDone }: { id: string; onDone: () => void }) {
     };
   }, [id]);
 
-  const finished = job && job.state !== 'running';
+  const state = job ? STATE_TONE[job.state] : { tone: 'info' as Tone, label: 'Starting' };
+  const tone =
+    job?.state === 'failed' || job?.state === 'interrupted'
+      ? 'notice-error'
+      : job?.state === 'succeeded'
+        ? 'notice-ok'
+        : 'notice-info';
   return (
-    <section
-      className={`notice ${job?.state === 'failed' ? 'notice-error' : job?.state === 'succeeded' ? 'notice-ok' : ''}`}
-      aria-live="polite"
-    >
-      <h2>
-        {job?.kind === 'verify'
-          ? 'Pipeline test'
-          : job?.kind === 'repair'
-            ? 'Repair'
-            : 'Deployment'}{' '}
-        {job
-          ? job.state === 'running'
-            ? 'in progress…'
-            : job.state === 'succeeded'
-              ? 'succeeded'
-              : 'failed'
-          : 'starting…'}
-      </h2>
-      <pre className="job-log">{job?.log.join('\n')}</pre>
+    <section className={`notice ${tone}`} aria-live="polite" style={{ marginTop: 16 }}>
+      <div className="spread">
+        <h2 style={{ margin: 0 }}>
+          {job ? OPERATION_LABEL[job.kind] : 'Operation'}
+          {job && (
+            <span className="small muted" style={{ fontWeight: 500 }}>
+              {' '}
+              · started by {job.actor} from the {where(job.via)}
+            </span>
+          )}
+        </h2>
+        <Pill tone={state.tone} live={job?.state === 'running'}>
+          {state.label}
+        </Pill>
+      </div>
+      <pre className="job-log" style={{ margin: '12px 0' }}>
+        {job?.log.join('\n') || 'Starting…'}
+      </pre>
       {job?.error && <p className="form-error">{job.error}</p>}
-      {finished && (
+      {job?.state === 'interrupted' && (
+        <p className="small">
+          The process running it stopped before it finished. Check the Components tab, then deploy
+          again if needed.
+        </p>
+      )}
+      {job && job.state !== 'running' && (
         <button type="button" className="secondary" onClick={onDone}>
           Close
         </button>
@@ -480,7 +888,7 @@ function GeneratedFile({ path, description }: { path: string; description: strin
   const [error, setError] = useState<unknown>(null);
   return (
     <details
-      className="disclosure"
+      className="technical"
       onToggle={(e) => {
         if (e.currentTarget.open && content === null) {
           runtimeApi.file(path).then((f) => setContent(f.content), setError);
@@ -488,16 +896,16 @@ function GeneratedFile({ path, description }: { path: string; description: strin
       }}
     >
       <summary>
-        <code>{path}</code> <span className="muted">— {description}</span>
+        <code>{path}</code> <span className="muted small">{description}</span>
       </summary>
-      <div className="disclosure-body">
+      <div className="technical-body">
         <ErrorMessage error={error} />
         {content !== null ? (
-          <pre>
+          <pre style={{ margin: 0 }}>
             <code>{content || '(empty file)'}</code>
           </pre>
         ) : (
-          !error && <p aria-busy="true">Loading…</p>
+          !error && <Loading />
         )}
       </div>
     </details>

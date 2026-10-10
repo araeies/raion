@@ -196,6 +196,19 @@ export function composeFile(components: ComponentSpec[], o: ComposeOptions): Art
     };
   }
 
+  if (ids.has('blackbox-exporter')) {
+    services['blackbox-exporter'] = hardened(
+      'blackbox-exporter',
+      {
+        command: ['--config.file=/etc/blackbox/blackbox.yml'],
+        volumes: ['./blackbox-exporter:/etc/blackbox:ro'],
+        // Edge network: it visits addresses outside this machine. HTTP checks need no privileges.
+        networks: [NETWORKS.backend, NETWORKS.edge],
+      },
+      { memory: '64m' },
+    );
+  }
+
   services.gateway = hardened(
     'gateway',
     {

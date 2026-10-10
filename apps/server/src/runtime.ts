@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -11,7 +10,11 @@ import {
   ApplyError,
   DockerComposeTarget,
   GatewayClient,
+  OperationJournal,
+  StatePaths,
   verifyPipeline,
+  type OperationKind,
+  type OperationRecord,
   type Runner,
 } from '@raion/deploy';
 
@@ -21,26 +24,21 @@ export interface RuntimeContext {
   target: DockerComposeTarget;
 }
 
-export interface Job {
-  id: string;
-  kind: 'apply' | 'verify' | 'repair';
-  startedBy: string;
-  startedAt: string;
-  state: 'running' | 'succeeded' | 'failed';
-  log: string[];
-  result?: unknown;
-  error?: string;
-}
+/** A long-running operation, as the web UI shows it. Started from the web UI or the CLI. */
+export type Job = OperationRecord;
 
 /** Access to the deployed runtime for the server: workspace context, gateway client and background jobs. */
 export class RuntimeService {
   #cache: { key: string; context: RuntimeContext | undefined; at: number } | undefined;
-  readonly #jobs = new Map<string, Job>();
+  /** Shared with the CLI: both record their operations here. */
+  readonly journal: OperationJournal;
 
   constructor(
     readonly workspaceDir: string,
     readonly runner?: Runner,
-  ) {}
+  ) {
+    this.journal = new OperationJournal(new StatePaths(workspaceDir));
+  }
 
   /** Loads the workspace (cached briefly, invalidated when raion.yaml changes). Undefined if invalid. */
   async context(): Promise<RuntimeContext | undefined> {
@@ -60,6 +58,11 @@ export class RuntimeService {
     return context;
   }
 
+  /** Forgets the cached workspace, after Raion itself changed its files. */
+  invalidate(): void {
+    this.#cache = undefined;
+  }
+
   async gateway(): Promise<GatewayClient | undefined> {
     const ctx = await this.context();
     if (!ctx?.target.releases.currentId()) return undefined;
@@ -71,44 +74,32 @@ export class RuntimeService {
   }
 
   job(id: string): Job | undefined {
-    return this.#jobs.get(id);
+    return this.journal.get(id);
   }
 
+  /** The operation changing the stack right now, started from here or from the CLI. */
   runningJob(): Job | undefined {
-    return [...this.#jobs.values()].find((j) => j.state === 'running');
+    return this.journal.active();
   }
 
-  /** Starts work in the background; progress is read with job(id). */
+  /** Recent operations from every interface, newest first. */
+  jobs(limit = 30): Job[] {
+    return this.journal.list(limit);
+  }
+
+  /** Starts work in the background as a recorded operation; progress is read with job(id). */
   start(
-    kind: Job['kind'],
+    kind: OperationKind,
     startedBy: string,
     work: (log: (m: string) => void) => Promise<unknown>,
   ): Job {
-    const job: Job = {
-      id: randomUUID(),
-      kind,
-      startedBy,
-      startedAt: new Date().toISOString(),
-      state: 'running',
-      log: [],
-    };
-    this.#jobs.set(job.id, job);
-    const log = (m: string) => job.log.push(m);
-    work(log).then(
-      (result) => {
-        job.state = 'succeeded';
-        job.result = result;
-      },
-      (error: unknown) => {
-        job.state = 'failed';
-        job.error = error instanceof Error ? error.message : String(error);
-        if (error instanceof ApplyError) job.result = error.details;
-      },
+    const handle = this.journal.begin({ kind, via: 'web', actor: startedBy });
+    work((m) => handle.log(m)).then(
+      (result) => handle.succeed(result),
+      (error: unknown) =>
+        handle.fail(error, error instanceof ApplyError ? error.details : undefined),
     );
-    // Keep the 50 most recent jobs.
-    for (const id of [...this.#jobs.keys()].slice(0, Math.max(0, this.#jobs.size - 50)))
-      this.#jobs.delete(id);
-    return job;
+    return this.journal.get(handle.id)!;
   }
 
   verify(ctx: RuntimeContext) {

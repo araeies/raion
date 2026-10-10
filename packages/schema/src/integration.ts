@@ -96,6 +96,9 @@ const parameter = z.discriminatedUnion('type', [
 export type IntegrationParameter = z.output<typeof parameter>;
 export type ParamValue = boolean | string;
 
+/** A condition on a boolean parameter. */
+const when = z.strictObject({ param: paramName, equals: z.boolean() });
+
 /** What the user must do once. Shown to the user; Raion never runs install commands. */
 const requirement = z.discriminatedUnion('kind', [
   z.strictObject({
@@ -103,14 +106,43 @@ const requirement = z.discriminatedUnion('kind', [
     manager: z.enum(['npm', 'pip', 'go']),
     packages: z.array(z.string().regex(/^(@[a-z0-9-]+\/)?[a-zA-Z0-9._/-]+$/)).min(1),
     description: z.string().max(500),
+    /** Only needed when this condition holds (e.g. not when the agent is injected). */
+    when: when.optional(),
   }),
   /** A change to how the application is started, e.g. "opentelemetry-instrument python app.py". */
-  z.strictObject({ kind: z.literal('command'), description: z.string().max(500) }),
+  z.strictObject({
+    kind: z.literal('command'),
+    description: z.string().max(500),
+    when: when.optional(),
+  }),
   /** A code change, explained in the integration's documentation. */
-  z.strictObject({ kind: z.literal('code'), description: z.string().max(500) }),
+  z.strictObject({
+    kind: z.literal('code'),
+    description: z.string().max(500),
+    when: when.optional(),
+  }),
   /** Something to set up in the monitored system, e.g. a read-only monitoring user. */
-  z.strictObject({ kind: z.literal('setup'), description: z.string().max(1000) }),
+  z.strictObject({
+    kind: z.literal('setup'),
+    description: z.string().max(1000),
+    when: when.optional(),
+  }),
 ]);
+
+/**
+ * OpenTelemetry agents Raion can add to a container when it starts, so the application's image
+ * needs no change. The images themselves are pinned by Raion (never named by a package), so an
+ * integration can only choose among these.
+ */
+export const AGENTS = ['nodejs', 'python', 'java'] as const;
+export type AgentName = (typeof AGENTS)[number];
+
+/** Where the copied agent appears inside the application's container. */
+export const AGENT_MOUNT = '/otel-auto-instrumentation';
+
+const agentPath = z
+  .string()
+  .regex(/^\/[A-Za-z0-9/_.-]+$/, 'must be an absolute path inside the agent image');
 
 const envValue = z.union([
   z.string().max(2000),
@@ -146,6 +178,22 @@ export const integrationManifest = z.strictObject({
       .strictObject({
         /** Environment variables for the instrumented process, in the order they are emitted. */
         env: z.record(z.string().regex(/^[A-Z][A-Z0-9_]*$/), envValue),
+        /**
+         * An agent copied into the container when it starts (Docker Compose only), from one of
+         * Raion's pinned agent images. `path` is what is copied, e.g. "/autoinstrumentation/.".
+         */
+        agent: z
+          .strictObject({
+            image: z.enum(AGENTS),
+            path: z.union([
+              agentPath,
+              z.strictObject({
+                cases: z.array(z.strictObject({ when: when.optional(), value: agentPath })).min(1),
+              }),
+            ]),
+            when: when.optional(),
+          })
+          .optional(),
       })
       .optional(),
     /** Telemetry the collector pulls from the system (databases, proxies), instead of the app pushing it. */

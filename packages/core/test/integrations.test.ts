@@ -42,7 +42,12 @@ describe('built-in integrations', () => {
     );
     const svc = result.workspace!.services[0]!;
     expect(svc.integrations).toEqual([
-      { name: 'nodejs', version: '0.1.0', params: { esmHook: true }, implicit: true },
+      {
+        name: 'nodejs',
+        version: '0.1.0',
+        params: { injectAgent: false, esmHook: true },
+        implicit: true,
+      },
     ]);
     expect(svc.capabilities.map((c) => c.id)).toEqual([
       'http.server',
@@ -55,7 +60,7 @@ describe('built-in integrations', () => {
 
   it('gives services without a known language no capabilities', () => {
     const result = workspace(
-      '  services:\n    - name: api\n      type: api\n      language: java\n',
+      '  services:\n    - name: api\n      type: api\n      language: php\n',
     );
     expect(result.workspace!.services[0]!.capabilities).toEqual([]);
   });
@@ -78,7 +83,7 @@ describe('integration validation', () => {
     );
     expect(unknown.diagnostics[0]).toMatchObject({
       code: CODES.INVALID_INTEGRATION_PARAMS,
-      hint: 'parameters: esmHook',
+      hint: 'parameters: injectAgent, esmHook',
     });
     const typed = workspace(
       '  services:\n    - name: api\n      type: api\n      integrations: [{ name: nodejs, params: { esmHook: "yes" } }]\n',
@@ -112,7 +117,7 @@ describe('integration validation', () => {
 
   it('warns that SLOs cannot be evaluated without HTTP metrics', () => {
     const result = workspace(
-      '  level: 3\n  services:\n    - name: api\n      type: api\n      language: java\n      slos:\n        - name: a\n          sli: { type: availability }\n          target: 99\n',
+      '  level: 3\n  services:\n    - name: api\n      type: api\n      language: php\n      slos:\n        - name: a\n          sli: { type: availability }\n          target: 99\n',
     );
     expect(result.ok).toBe(true);
     expect(result.diagnostics.map((d) => d.code)).toEqual([CODES.SLO_WITHOUT_HTTP_METRICS]);
@@ -229,11 +234,101 @@ describe('connecting services', () => {
 
   it('explains when a service cannot be connected automatically yet', () => {
     const result = workspace(
-      '  services:\n    - name: api\n      type: api\n      language: java\n',
+      '  services:\n    - name: api\n      type: api\n      language: php\n',
     );
     const ws = result.workspace!;
     const c = connectService(ws, ws.services[0]!);
     expect(c.supported).toBe(false);
-    expect(c.notes[0]).toContain('Raion has no java integration');
+    expect(c.notes[0]).toContain('Raion has no php integration');
+  });
+});
+
+describe('adding the agent when the container starts', () => {
+  const ws = (services: string) => {
+    const r = validateSources([
+      {
+        path: 'raion.yaml',
+        content: `apiVersion: raion/v1alpha1\nkind: Workspace\nmetadata:\n  name: t\nspec:\n  level: 2\n  services:\n${services}`,
+      },
+    ]);
+    if (!r.workspace) throw new Error(JSON.stringify(r.diagnostics));
+    return r.workspace;
+  };
+
+  it('needs no change to the image: a helper copies the pinned agent into a shared volume', () => {
+    const w = ws(
+      '    - name: shop\n      type: api\n      integrations:\n        - name: nodejs\n          params: { injectAgent: true }\n',
+    );
+    const c = connectService(w, w.services[0]!);
+    expect(c.requirements).toEqual([]);
+    expect(c.agent).toMatchObject({ name: 'nodejs', path: '/autoinstrumentation/.' });
+    expect(c.agent!.image).toMatch(
+      /^ghcr\.io\/open-telemetry\/opentelemetry-operator\/autoinstrumentation-nodejs:0\.78\.0@sha256:[0-9a-f]{64}$/,
+    );
+    expect(Object.fromEntries(c.env).NODE_OPTIONS).toBe(
+      '--require /otel-auto-instrumentation/autoinstrumentation.js',
+    );
+
+    const override = parse(composeOverride(w, [c])) as {
+      services: Record<string, Record<string, unknown>>;
+      volumes: Record<string, unknown>;
+    };
+    expect(override.services['raion-agent-shop']).toMatchObject({
+      command: ['cp', '-r', '/autoinstrumentation/.', '/otel-auto-instrumentation/'],
+      volumes: ['raion-agent-shop:/otel-auto-instrumentation'],
+      network_mode: 'none',
+      read_only: true,
+      cap_drop: ['ALL'],
+      restart: 'no',
+    });
+    expect(override.services.shop).toMatchObject({
+      depends_on: { 'raion-agent-shop': { condition: 'service_completed_successfully' } },
+      volumes: ['raion-agent-shop:/otel-auto-instrumentation:ro'],
+    });
+    expect(override.volumes).toEqual({ 'raion-agent-shop': {} });
+  });
+
+  it('is the default for Java, picks the Alpine build of the Python agent, and is Compose only', () => {
+    const w = ws(
+      [
+        '    - name: billing\n      type: api\n      language: java\n',
+        '    - name: worker\n      type: worker\n      integrations:\n        - name: python\n          params: { injectAgent: true, alpine: true }\n',
+        '    - name: host-app\n      type: api\n      runtime: { type: host }\n      integrations:\n        - name: nodejs\n          params: { injectAgent: true }\n',
+      ].join(''),
+    );
+    const of = (name: string) =>
+      connectService(
+        w,
+        w.services.find((s) => s.name === name)!,
+      );
+    const [java, python, host] = [of('billing'), of('worker'), of('host-app')];
+    expect(Object.fromEntries(java.env).JAVA_TOOL_OPTIONS).toBe(
+      '-javaagent:/otel-auto-instrumentation/javaagent.jar',
+    );
+    expect(java.agent?.path).toBe('/javaagent.jar');
+    expect(python.agent?.path).toBe('/autoinstrumentation-musl/.');
+    expect(Object.fromEntries(python.env).PYTHONPATH).toContain('/otel-auto-instrumentation');
+    expect(python.requirements).toEqual([]);
+    expect(host.agent).toBeUndefined();
+    expect(host.notes.join(' ')).toMatch(/only works in Docker Compose/);
+  });
+
+  it('only lets a package choose among the agents Raion pins', () => {
+    const files = [
+      {
+        path: 'raion.yaml',
+        content:
+          'apiVersion: raion/v1alpha1\nkind: Workspace\nmetadata:\n  name: t\nspec:\n  services:\n    - name: shop\n      type: api\n      integrations: [evil]\n',
+      },
+      {
+        path: 'integrations/evil/integration.yaml',
+        content:
+          'apiVersion: raion/v1alpha1\nkind: Integration\nmetadata:\n  name: evil\n  version: 1.0.0\nspec:\n  kind: application\n  displayName: Evil\n  description: x\n  instrumentation:\n    env: {}\n    agent:\n      image: docker.io/evil/agent:latest\n      path: /x\n  docs: README.md\n',
+      },
+      { path: 'integrations/evil/README.md', content: '# x\n' },
+    ];
+    const result = validateSources(files);
+    expect(result.workspace).toBeUndefined();
+    expect(JSON.stringify(result.diagnostics)).toMatch(/nodejs|python|java/);
   });
 });

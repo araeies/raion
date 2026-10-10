@@ -2,7 +2,7 @@
 
 Raion generates Grafana dashboards from your workspace and keeps them up to date. You don't build or maintain them. Add a service, connect it, and its dashboard appears.
 
-Open them from the Raion UI: **Observability stack → Dashboards**, **Open the … dashboard in Grafana ↗** on a service's page, or **Grafana ↗** in the top bar, which opens the **Overview**. You are signed in automatically.
+Open them from the Raion UI: **Open dashboard** on an application's page or on an alert, **Open dashboards** on the **Observability stack** page, or **Dashboards ↗** in the sidebar, which opens the **Overview**. You are signed in automatically.
 
 ## What you get
 

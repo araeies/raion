@@ -1,6 +1,6 @@
 # Describing your services
 
-You describe what Raion observes in YAML files in a **workspace** folder. This page lists every option. Run `raion validate` after each change: it checks every field, explains mistakes with the file and line, and suggests fixes.
+Raion keeps what it observes in YAML files in a **workspace** folder. The web UI writes these files for you (**Add an application**, an application's **Settings** tab, **Settings**, **Reliability goals**), so you only need this page if you prefer to edit files, review changes in Git, or want an option the web UI does not show. This page lists every option. Run `raion validate` after each change: it checks every field, explains mistakes with the file and line, and suggests fixes.
 
 Every document starts with:
 
@@ -156,8 +156,13 @@ spec:
   description: Takes payments
   repository: https://github.com/example/payment-api
   runtime:
-    type: compose # compose | host
+    type: compose # compose | host | remote
     composeService: payment-api # name in your compose file (default: the service name)
+  checks: # outside checks; required for runtime remote, optional otherwise
+    - url: https://payments.example.com/health
+      expectStatus: [200] # default: any 2xx
+      interval: 30s # 15s to 10m (default 30s)
+      timeout: 10s # 1s to 60s (default 10s)
   level: 3 # optional: override the workspace level for this service
   features: {} # optional: override individual features
   signals: # all default to true
@@ -188,6 +193,8 @@ integrations:
       esmHook: true # also instrument ES modules (default)
 ```
 
+For Node.js, Python and Java in Docker Compose, `injectAgent: true` adds OpenTelemetry when the container starts instead of in your image (the default for Java). See [Without rebuilding your image](05-connecting-a-service.md#without-rebuilding-your-image).
+
 Databases and proxies take an address and, where needed, a credential, which must be a secret reference:
 
 ```yaml
@@ -199,6 +206,14 @@ integrations:
 ```
 
 See [Integrations](integrations/README.md) for every integration and its parameters. A workspace can also contain its own packages in `integrations/<name>/`, pinned in `integrations.lock.yaml` ([Writing integrations](integrations/writing-integrations.md)).
+
+### Where it runs
+
+- **`compose`** (the default): a service in Docker Compose on this machine. `raion connect` writes the settings for your compose file, and `raion connect --restart` restarts a running one with them.
+- **`host`**: a process started directly on this machine. Raion gives the environment variables to start it with.
+- **`remote`**: anywhere else (the cloud, another server, Kubernetes). Raion cannot reach inside it, so it watches it from outside with `checks`, which are then required (`RAI-E027`). See [applications that run elsewhere](05-connecting-a-service.md#applications-that-run-elsewhere).
+
+`checks` also work on `compose` and `host` services, to check them from the outside as a user would.
 
 ### Container logs
 

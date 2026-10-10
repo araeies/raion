@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { formatValue, Sparkline } from './charts';
 import { Diagnostics } from './components';
 import type { IntegrationView, User } from './api';
 import { Markdown } from './markdown';
 import { AccountPage } from './pages/Account';
 import { AdvisorPage } from './pages/Advisor';
+import { AddApplicationPage, slugify } from './pages/AddApplication';
+import { AlertsPage } from './pages/Alerts';
 import { AuditPage } from './pages/Audit';
 import { MyTokens } from './pages/Tokens';
 import { example, IntegrationDetailPage, IntegrationsPage } from './pages/Integrations';
@@ -142,9 +145,9 @@ describe('AdvisorPage', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(report)));
     render(<AdvisorPage user={{ id: 1, username: 'v', role: 'viewer' } as User} />);
     expect(await screen.findByText('pay is a critical service but has no SLO')).toBeDefined();
-    expect(screen.queryByRole('button', { name: 'Apply this fix' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Fix it for me' })).toBeNull();
     expect(screen.getByText('An editor or admin can apply this fix.')).toBeDefined();
-    expect(screen.getByText('1 ignored (advisor.ignore in raion.yaml)')).toBeDefined();
+    expect(screen.getByText('1 marked as not relevant')).toBeDefined();
   });
 
   it('applies a fix by id only and says what to do next', async () => {
@@ -157,7 +160,7 @@ describe('AdvisorPage', () => {
       .mockResolvedValue(json({ ...report, findings: [] }));
     vi.stubGlobal('fetch', fetchMock);
     render(<AdvisorPage user={{ id: 1, username: 'e', role: 'editor' } as User} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Apply this fix' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Fix it for me' }));
     expect(
       (await screen.findByText('Created the SLO: updated slos/pay-availability.yaml.')).textContent,
     ).toBeDefined();
@@ -349,5 +352,193 @@ describe('MyTokens', () => {
     expect(screen.getByText('Copy your new token now.')).toBeDefined();
     const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(init.body).toBe(JSON.stringify({ name: 'ci', role: 'viewer', expiresInDays: 90 }));
+  });
+});
+
+describe('AlertsPage', () => {
+  const rule = (alert: string, title: string) => ({
+    group: 'raion-infrastructure',
+    alert,
+    severity: 'warning',
+    scope: 'infrastructure' as const,
+    summary: '',
+    description: '',
+    expr: 'up == 0',
+    title,
+    meaning: `${title}: meaning`,
+    condition: `${title}: condition`,
+    action: [`${title}: first step`],
+  });
+
+  it('explains each alert, shows the self-test and what is about to fire', async () => {
+    const overview = {
+      deployed: true,
+      health: { alertmanagerReachable: true, watchdogReceived: true, ok: true, message: 'ok' },
+      selfTest: { firing: true, rule: rule('Watchdog', 'Alerting self-test') },
+      firing: [
+        {
+          fingerprint: 'f1',
+          alertname: 'HostHighCpu',
+          severity: 'critical',
+          service: null,
+          labels: { alertname: 'HostHighCpu' },
+          annotations: { summary: 'CPU has been 95% busy' },
+          startsAt: new Date(Date.now() - 3_600_000).toISOString(),
+          firstSeen: '',
+          lastSeen: '',
+          resolvedAt: null,
+          state: 'active',
+          source: 'alertmanager',
+          rule: rule('HostHighCpu', 'The processor is overloaded'),
+        },
+      ],
+      pending: [
+        {
+          alertname: 'HostMemoryPressure',
+          labels: { alertname: 'HostMemoryPressure' },
+          activeAt: new Date().toISOString(),
+          value: '0.05',
+          rule: rule('HostMemoryPressure', 'Memory is running out'),
+        },
+      ],
+      resolved: [],
+      rules: [rule('HostHighCpu', 'The processor is overloaded')],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) =>
+        Promise.resolve(json(url.includes('silences') ? { silences: [] } : overview)),
+      ),
+    );
+    render(<AlertsPage user={{ id: 1, username: 'v', role: 'viewer' } as User} />);
+    expect(await screen.findByText('The processor is overloaded')).toBeDefined();
+    expect(screen.getByText('CPU has been 95% busy')).toBeDefined();
+    expect(screen.getByText('The processor is overloaded: condition')).toBeDefined();
+    expect(screen.getByText('The processor is overloaded: first step')).toBeDefined();
+    expect(screen.getByText('Alerting works')).toBeDefined();
+    // Viewers cannot silence.
+    expect(screen.queryByRole('button', { name: 'Silence…' })).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: /About to fire/ }));
+    expect(await screen.findByText('Memory is running out')).toBeDefined();
+  });
+});
+
+describe('Add an application', () => {
+  it('turns a friendly name into a valid name', () => {
+    expect(slugify('Payment API')).toBe('payment-api');
+    expect(slugify('  42 Shop Front! ')).toBe('shop-front');
+    expect(slugify('Ümlaut Café')).toBe('umlaut-cafe');
+  });
+
+  it('asks a few questions and sets everything up through the editing API', async () => {
+    const saved: unknown[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === '/api/v1/workspace/edits') {
+          saved.push(JSON.parse(init?.body as string));
+          return Promise.resolve(json({ summary: 'ok', changes: [], warnings: [] }));
+        }
+        if (url === '/api/v1/integrations') return Promise.resolve(json({ integrations: [] }));
+        if (url === '/api/v1/discovery') return Promise.resolve(json({ containers: [] }));
+        if (url === '/api/v1/services')
+          return Promise.resolve(json({ services: [], diagnostics: [], valid: true }));
+        return Promise.resolve(
+          json({
+            status: { deployed: { id: '1' } },
+            plan: { noChanges: false, securityRelevant: [], dataAffecting: [] },
+          }),
+        );
+      }),
+    );
+    render(<AddApplicationPage user={{ id: 1, username: 'e', role: 'editor' } as User} />);
+    fireEvent.change(await screen.findByLabelText('What is your application called?'), {
+      target: { value: 'Payment API' },
+    });
+    expect(screen.getByText('payment-api')).toBeDefined();
+    fireEvent.click(screen.getByRole('radio', { name: /^API/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+    fireEvent.click(await screen.findByRole('radio', { name: /^Docker Compose/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+    fireEvent.click(await screen.findByRole('radio', { name: /^Python/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+    expect(await screen.findByText('Raion recommends')).toBeDefined();
+    expect(screen.getByText('No change to your application')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /Set this up for me/ }));
+    expect(await screen.findByText('Payment API is set up')).toBeDefined();
+    expect(saved).toEqual([
+      {
+        action: {
+          kind: 'service.add',
+          service: {
+            name: 'payment-api',
+            type: 'api',
+            tier: 'standard',
+            description: 'Payment API',
+            runtime: { type: 'compose' },
+            language: 'python',
+            integrations: [{ name: 'python', params: { injectAgent: true } }],
+            features: { slos: true },
+          },
+        },
+      },
+      {
+        action: {
+          kind: 'slo.add',
+          slo: {
+            service: 'payment-api',
+            name: 'availability',
+            sli: { type: 'availability' },
+            target: 99.9,
+            window: '30d',
+          },
+        },
+      },
+    ]);
+  });
+});
+
+describe('Sparkline', () => {
+  const series = {
+    key: 'errors' as const,
+    label: 'Share failing',
+    unit: 'ratio' as const,
+    points: [
+      [1000, 0.01],
+      [1060, 0.02],
+      // A gap: nothing arrived for several minutes.
+      [1600, 0.005],
+    ] as [number, number][],
+  };
+
+  it('shows the latest value, breaks the line at gaps and reads moments with the keyboard', () => {
+    const { container } = render(
+      <Sparkline series={series} from={1000} to={1600} step={60} tone="crit" />,
+    );
+    expect(screen.getByText('0.50%')).toBeTruthy();
+    const line = container.querySelector('.chart-line')!.getAttribute('d')!;
+    expect(line.match(/M/g)).toHaveLength(2);
+    const chart = screen.getByRole('img');
+    expect(chart.getAttribute('aria-label')).toContain('highest 2.0%');
+    fireEvent.keyDown(chart, { key: 'ArrowLeft' });
+    expect(screen.getByText(/^0\.50% at /)).toBeTruthy();
+    fireEvent.keyDown(chart, { key: 'ArrowLeft' });
+    expect(screen.getByText(/^2\.0% at /)).toBeTruthy();
+    fireEvent.keyDown(chart, { key: 'Escape' });
+    expect(screen.getByText('0.50%')).toBeTruthy();
+  });
+
+  it('says so when nothing arrived', () => {
+    render(<Sparkline series={{ ...series, points: [] }} from={0} to={60} step={15} />);
+    expect(screen.getByText('Nothing arrived in this period.')).toBeTruthy();
+    expect(screen.getByText('No data')).toBeTruthy();
+  });
+
+  it('formats each unit for people', () => {
+    expect(formatValue('seconds', 0.2149)).toBe('215 ms');
+    expect(formatValue('seconds', 1.5)).toBe('1.50 s');
+    expect(formatValue('perSecond', 4.5)).toBe('4.50/s');
+    expect(formatValue('perSecond', 120.4)).toBe('120/s');
+    expect(formatValue('ratio', 0.0004)).toBe('0.04%');
   });
 });

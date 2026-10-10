@@ -357,7 +357,7 @@ export function resolveWorkspace(
       path: [...svc.base, 'integrations', i] as Path,
       implicit: false,
     }));
-    if (refs.length === 0) {
+    if (refs.length === 0 && s.runtime?.type !== 'remote') {
       const implicit = registry.defaultFor(s.language);
       if (implicit) {
         refs.push({
@@ -475,13 +475,21 @@ export function resolveWorkspace(
     for (const slo of slos) {
       if (slo.sli.type === 'custom') continue;
       const at = { file: slo.source.file, ...(slo.source.line ? { line: slo.source.line } : {}) };
+      // Without request metrics, availability and speed can come from outside checks.
+      if (
+        (!httpServer || httpServer.id !== 'http.server') &&
+        s.checks.length > 0 &&
+        (slo.sli.type === 'availability' || slo.sli.type === 'latency')
+      ) {
+        continue;
+      }
       if (!httpServer || httpServer.id !== 'http.server') {
         diagnostics.push({
           severity: 'warning',
           code: CODES.SLO_WITHOUT_HTTP_METRICS,
           ...at,
           message: `SLO "${slo.name}" needs HTTP request metrics, but no integration of service "${svc.name}" provides them, so it cannot be evaluated yet`,
-          hint: `add an integration that provides http.server metrics (available: ${registry.names().join(', ')}), or use a custom SLI`,
+          hint: `add an integration that provides http.server metrics (available: ${registry.names().join(', ')}), add an outside check (checks: [{ url: … }]) for an availability or latency goal, or use a custom SLI`,
         });
         continue;
       }
@@ -504,12 +512,34 @@ export function resolveWorkspace(
     }
 
     const loc = svc.doc.locate(svc.base);
-    if (s.containerLogs && s.runtime?.type === 'host') {
+    if (s.runtime?.type === 'remote') {
+      if (s.checks.length === 0) {
+        error(
+          CODES.REMOTE_WITHOUT_CHECKS,
+          svc.doc,
+          [...svc.base, 'runtime'],
+          `service "${svc.name}" runs elsewhere ("remote"), so Raion can only watch it from outside, but it has no checks`,
+          'add its address under checks, e.g. "checks: [{ url: https://shop.example.com/health }]"',
+        );
+      }
+      const pushed =
+        capabilities.filter((c) => c.id !== 'logs.otlp').length > 0 && s.integrations.length > 0;
+      if (pushed) {
+        warning(
+          CODES.REMOTE_INTEGRATION_IGNORED,
+          svc.doc,
+          [...svc.base, 'integrations'],
+          `service "${svc.name}" runs elsewhere ("remote"); its integrations only work if the collector on this machine can reach it or it can reach the collector`,
+          'keep them only if the network allows it; outside checks work in any case',
+        );
+      }
+    }
+    if (s.containerLogs && s.runtime?.type !== undefined && s.runtime.type !== 'compose') {
       error(
         CODES.CONTAINER_LOGS_NOT_COMPOSE,
         svc.doc,
         [...svc.base, 'containerLogs'],
-        `service "${svc.name}" runs on the host, but containerLogs collects the logs of a Compose container`,
+        `service "${svc.name}" does not run in Docker Compose here, but containerLogs collects the logs of a Compose container`,
         'remove containerLogs, or send logs with an integration instead',
       );
     }
@@ -544,6 +574,7 @@ export function resolveWorkspace(
       capabilities,
       signals: s.signals,
       containerLogs: s.containerLogs,
+      checks: s.checks,
       dependencies: s.dependencies,
       slos,
       runbooks: s.runbooks,

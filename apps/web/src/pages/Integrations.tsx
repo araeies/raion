@@ -2,6 +2,7 @@ import { integrationsApi, type IntegrationParameterView, type IntegrationView } 
 import { ErrorMessage } from '../components';
 import { Markdown } from '../markdown';
 import { linkHandler } from '../router';
+import { Icon, Loading, PageHeader, Technical, type IconName } from '../ui';
 import { useLoad } from '../useLoad';
 
 const CAPABILITY_TEXT: Record<string, string> = {
@@ -28,42 +29,78 @@ function useIntegrations() {
   return useLoad(() => integrationsApi.list(), 'integrations');
 }
 
+const KIND_ICON: Record<string, IconName> = {
+  application: 'code',
+  database: 'server',
+  edge: 'globe',
+  infrastructure: 'layers',
+  cloud: 'cloud',
+  platform: 'box',
+};
+
 /** Every integration available to this workspace. */
 export function IntegrationsPage() {
   const result = useIntegrations();
-  if (result.state === 'loading') return <p aria-busy="true">Loading integrations…</p>;
-  if (result.state === 'error') return <ErrorMessage error={result.error} />;
+  const header = (
+    <PageHeader
+      title="Integrations"
+      description="The technologies Raion knows how to monitor. Raion picks the right one for each application automatically; this is what each provides."
+      actions={
+        <a className="button" href="/services/new" onClick={linkHandler('/services/new')}>
+          <Icon name="plus" /> Add an application
+        </a>
+      }
+    />
+  );
+  if (result.state === 'loading')
+    return (
+      <>
+        {header}
+        <Loading />
+      </>
+    );
+  if (result.state === 'error')
+    return (
+      <>
+        {header}
+        <ErrorMessage error={result.error} />
+      </>
+    );
   return (
     <>
-      <h1>Integrations</h1>
-      <p className="lead">
-        An integration connects a technology to Raion: how a service is connected, and what Raion
-        can show and alert on for it. Choose one to see what it provides and how to use it.
-      </p>
-      <ul className="cards">
+      {header}
+      <div className="grid">
         {result.data.integrations.map((i) => (
-          <li key={i.name} className="card">
-            <h2 className="card-title">
-              <a href={`/integrations/${i.name}`} onClick={linkHandler(`/integrations/${i.name}`)}>
-                {i.displayName}
-              </a>
-            </h2>
-            <p>
-              <span className="badge">{KIND_TEXT[i.kind] ?? i.kind}</span>{' '}
-              {i.source === 'workspace' && <span className="badge">your workspace</span>}
-            </p>
-            <p className="muted">
-              {i.collects === 'pull' ? 'Read by the collector' : 'Sent by the application'}
-              {i.languages.length > 0 ? ` · for ${i.languages.join(', ')} services` : ''}
-            </p>
-            <p className="muted">
-              {i.services.length === 0
-                ? 'Not used yet'
-                : `Used by ${i.services.length} service${i.services.length === 1 ? '' : 's'}`}
-            </p>
-          </li>
+          <a
+            key={i.name}
+            className="card card-link app-card"
+            href={`/integrations/${i.name}`}
+            onClick={linkHandler(`/integrations/${i.name}`)}
+          >
+            <div className="app-card-head">
+              <span className="app-icon" aria-hidden="true">
+                <Icon name={KIND_ICON[i.kind] ?? 'plug'} size={20} />
+              </span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <strong>{i.displayName}</strong>
+                <span className="small muted">
+                  {i.collects === 'pull' ? 'Read by the collector' : 'Sent by the application'}
+                  {i.languages.length > 0 ? ` · for ${i.languages.join(', ')} services` : ''}
+                </span>
+              </div>
+            </div>
+            <div className="app-card-foot">
+              <span className="pill">{KIND_TEXT[i.kind] ?? i.kind}</span>
+              {i.source === 'workspace' && <span className="pill">Your workspace</span>}
+              <span className="small muted">
+                {i.services.length === 0
+                  ? 'Not used yet'
+                  : `Used by ${i.services.length} service${i.services.length === 1 ? '' : 's'}`}
+              </span>
+            </div>
+          </a>
         ))}
-      </ul>
+      </div>
     </>
   );
 }
@@ -71,47 +108,91 @@ export function IntegrationsPage() {
 /** One integration: what it provides, how to configure it, and its documentation. */
 export function IntegrationDetailPage({ name }: { name: string }) {
   const result = useIntegrations();
-  if (result.state === 'loading') return <p aria-busy="true">Loading {name}…</p>;
+  const back = { href: '/integrations', label: 'Integrations' };
+  if (result.state === 'loading') return <Loading label={`Loading ${name}…`} />;
   if (result.state === 'error') return <ErrorMessage error={result.error} />;
   const i = result.data.integrations.find((x) => x.name === name);
-  if (!i) return <p role="alert">There is no integration called {name}.</p>;
+  if (!i)
+    return (
+      <>
+        <PageHeader title={name} back={back} />
+        <p className="notice notice-error" role="alert">
+          There is no integration called {name}.
+        </p>
+      </>
+    );
   return (
     <>
-      <p>
-        <a href="/integrations" onClick={linkHandler('/integrations')}>
-          ← All integrations
-        </a>
-      </p>
-      <h1>{i.displayName}</h1>
-      <p className="lead">{i.description}</p>
-      <p className="muted">
-        <code>{i.name}</code> {i.version} ·{' '}
-        {i.source === 'built-in' ? 'included with Raion' : 'from your workspace'} ·{' '}
-        {i.collects === 'pull' ? 'the collector reads it' : 'the application sends its telemetry'}
-      </p>
+      <PageHeader
+        back={back}
+        title={i.displayName}
+        description={i.description}
+        actions={
+          <a className="button" href="/services/new" onClick={linkHandler('/services/new')}>
+            <Icon name="plus" /> Add an application
+          </a>
+        }
+      />
+      <div className="row" style={{ marginTop: -12, marginBottom: 20 }}>
+        <span className="pill">{KIND_TEXT[i.kind] ?? i.kind}</span>
+        <span className="pill">
+          {i.source === 'built-in' ? 'Included with Raion' : 'From your workspace'}
+        </span>
+        <span className="pill">
+          {i.collects === 'pull' ? 'Raion reads it' : 'The application sends its data'}
+        </span>
+      </div>
 
-      <section aria-labelledby="provides-title">
-        <h2 id="provides-title">What you get</h2>
-        <ul>
-          {i.capabilities.map((c) => (
-            <li key={c}>{CAPABILITY_TEXT[c] ?? c}</li>
-          ))}
-        </ul>
-      </section>
+      <div className="grid-2">
+        <section className="card" aria-labelledby="provides-title">
+          <div className="card-header">
+            <h2 id="provides-title">What you get</h2>
+          </div>
+          <ul className="checklist">
+            {i.capabilities.map((c) => (
+              <li key={c} className="done">
+                <span className="check" aria-hidden="true">
+                  <Icon name="check" size={14} />
+                </span>
+                {CAPABILITY_TEXT[c] ?? c}
+              </li>
+            ))}
+          </ul>
+        </section>
 
-      <section aria-labelledby="use-title">
-        <h2 id="use-title">Using it</h2>
-        <p>
-          {i.languages.length > 0 && i.parameters.length === 0
-            ? `Services with language ${i.languages.join(' or ')} use it automatically. Add this to the service's file:`
-            : "Add this to the service's file in services/, then run raion apply:"}
-        </p>
-        <pre>
-          <code>{example(i)}</code>
-        </pre>
+        <section className="card" aria-labelledby="used-title">
+          <div className="card-header">
+            <h2 id="used-title">Services using it</h2>
+          </div>
+          {i.services.length === 0 ? (
+            <p className="muted">None yet.</p>
+          ) : (
+            <ul className="attention-list">
+              {i.services.map((s) => (
+                <li key={s}>
+                  <a href={`/services/${s}`} onClick={linkHandler(`/services/${s}`)}>
+                    {s}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      <section className="card" aria-labelledby="use-title" style={{ marginTop: 20 }}>
+        <div className="card-header">
+          <div>
+            <h2 id="use-title">Using it</h2>
+            <span className="muted small">
+              The easiest way: <strong>Add an application</strong> and answer the questions. Raion
+              sets this integration up for you.
+            </span>
+          </div>
+        </div>
         {i.requirements.length > 0 && (
           <>
-            <h3>Setup</h3>
+            <h3>What it needs</h3>
             <ol>
               {i.requirements.map((r) => (
                 <li key={r.description}>
@@ -128,58 +209,49 @@ export function IntegrationDetailPage({ name }: { name: string }) {
             </ol>
           </>
         )}
-        <p className="muted">
-          Then connect the service: <code>raion connect --out observability.override.yaml</code>,
-          and check it with <code>raion verify --service &lt;name&gt;</code>.
-        </p>
-      </section>
-
-      {i.parameters.length > 0 && (
-        <section aria-labelledby="params-title">
-          <h2 id="params-title">Parameters</h2>
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Parameter</th>
-                <th scope="col">Value</th>
-                <th scope="col">Meaning</th>
-              </tr>
-            </thead>
-            <tbody>
-              {i.parameters.map((p) => (
-                <tr key={p.name}>
-                  <th scope="row">
-                    <code>{p.name}</code>
-                  </th>
-                  <td>{valueText(p)}</td>
-                  <td>{p.description}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
-
-      <section aria-labelledby="used-title">
-        <h2 id="used-title">Services using it</h2>
-        {i.services.length === 0 ? (
-          <p className="muted">None yet.</p>
-        ) : (
-          <ul>
-            {i.services.map((s) => (
-              <li key={s}>
-                <a href={`/services/${s}`} onClick={linkHandler(`/services/${s}`)}>
-                  {s}
-                </a>
-              </li>
-            ))}
-          </ul>
+        <Technical summary="In a workspace file">
+          <p className="small muted" style={{ marginTop: 0 }}>
+            {i.languages.length > 0 && i.parameters.length === 0
+              ? `Services with language ${i.languages.join(' or ')} use it automatically. In the service's file:`
+              : "In the service's file in services/ (then raion apply):"}
+          </p>
+          <pre style={{ margin: 0 }}>
+            <code>{example(i)}</code>
+          </pre>
+        </Technical>
+        {i.parameters.length > 0 && (
+          <Technical summary={`Settings (${i.parameters.length})`}>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Setting</th>
+                    <th scope="col">Value</th>
+                    <th scope="col">Meaning</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {i.parameters.map((p) => (
+                    <tr key={p.name}>
+                      <th scope="row">
+                        <code>{p.name}</code>
+                      </th>
+                      <td>{valueText(p)}</td>
+                      <td>{p.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Technical>
         )}
       </section>
 
       {i.docs && (
-        <section aria-labelledby="docs-title">
-          <h2 id="docs-title">Documentation</h2>
+        <section className="card markdown" aria-labelledby="docs-title" style={{ marginTop: 20 }}>
+          <div className="card-header">
+            <h2 id="docs-title">Guide</h2>
+          </div>
           <Markdown source={i.docs.replace(/^#\s+.*\n/, '')} />
         </section>
       )}

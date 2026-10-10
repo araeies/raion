@@ -3,6 +3,7 @@ import { api, type Role, type User } from '../api';
 import { ErrorMessage, Field, useSubmit } from '../components';
 import { useLoad } from '../useLoad';
 import { AllTokens } from './Tokens';
+import { Explain, Loading, PageHeader } from '../ui';
 
 const ROLE_HELP: Record<Role, string> = {
   viewer: 'Can see services, health, SLOs, alerts and configuration.',
@@ -28,99 +29,102 @@ export function UsersPage({ currentUser }: { currentUser: User }) {
 
   return (
     <>
-      <h1>Users</h1>
-      <p className="lead">
-        Everyone who uses Raion has their own account. Changing a role or disabling an account signs
-        that person out.
-      </p>
-      <ul className="role-help">
-        {(Object.keys(ROLE_HELP) as Role[]).map((role) => (
-          <li key={role}>
-            <strong>{role}</strong>: {ROLE_HELP[role]}
-          </li>
-        ))}
-      </ul>
+      <PageHeader
+        title="People"
+        description="Everyone who uses Raion has their own account. Changing someone's role or disabling their account signs them out everywhere."
+      />
+      <Explain summary="What can each role do?">
+        <ul className="role-help" style={{ margin: 0 }}>
+          {(Object.keys(ROLE_HELP) as Role[]).map((role) => (
+            <li key={role}>
+              <strong>{role}</strong>: {ROLE_HELP[role]}
+            </li>
+          ))}
+        </ul>
+      </Explain>
       <ErrorMessage error={actionError} />
       {notice && (
         <p className="notice notice-ok" role="status">
           {notice}
         </p>
       )}
-      {result.state === 'loading' && <p aria-busy="true">Loading users…</p>}
+      {result.state === 'loading' && <Loading label="Loading people…" />}
       {result.state === 'error' && <p role="alert">{result.error.message}</p>}
       {result.state === 'ready' && (
-        <table>
-          <caption className="visually-hidden">User accounts</caption>
-          <thead>
-            <tr>
-              <th scope="col">Username</th>
-              <th scope="col">Role</th>
-              <th scope="col">Status</th>
-              <th scope="col">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {result.data.users.map((u) => (
-              <tr key={u.id}>
-                <th scope="row">
-                  {u.username}
-                  {u.id === currentUser.id && <span className="muted"> (you)</span>}
-                  {u.sso && <span className="badge">SSO</span>}
-                </th>
-                <td>
-                  <label className="visually-hidden" htmlFor={`role-${u.id}`}>
-                    Role for {u.username}
-                  </label>
-                  <select
-                    id={`role-${u.id}`}
-                    value={u.role}
-                    disabled={u.sso}
-                    title={u.sso ? 'Set by the identity provider at each sign-in' : undefined}
-                    onChange={(e) => void update(u, { role: e.target.value as Role })}
-                  >
-                    <option value="viewer">viewer</option>
-                    <option value="editor">editor</option>
-                    <option value="admin">admin</option>
-                  </select>
-                </td>
-                <td>{u.disabled ? 'disabled' : 'active'}</td>
-                <td>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => void update(u, { disabled: !u.disabled })}
-                  >
-                    {u.disabled ? 'Enable' : 'Disable'}
-                  </button>{' '}
-                  {u.id !== currentUser.id && !u.sso && (
+        <div className="table-wrap" style={{ marginTop: 16 }}>
+          <table>
+            <caption className="visually-hidden">User accounts</caption>
+            <thead>
+              <tr>
+                <th scope="col">Username</th>
+                <th scope="col">Role</th>
+                <th scope="col">Status</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.data.users.map((u) => (
+                <tr key={u.id}>
+                  <th scope="row">
+                    {u.username}
+                    {u.id === currentUser.id && <span className="muted"> (you)</span>}
+                    {u.sso && <span className="badge">SSO</span>}
+                  </th>
+                  <td>
+                    <label className="visually-hidden" htmlFor={`role-${u.id}`}>
+                      Role for {u.username}
+                    </label>
+                    <select
+                      id={`role-${u.id}`}
+                      value={u.role}
+                      disabled={u.sso}
+                      title={u.sso ? 'Set by the identity provider at each sign-in' : undefined}
+                      onChange={(e) => void update(u, { role: e.target.value as Role })}
+                    >
+                      <option value="viewer">viewer</option>
+                      <option value="editor">editor</option>
+                      <option value="admin">admin</option>
+                    </select>
+                  </td>
+                  <td>{u.disabled ? 'disabled' : 'active'}</td>
+                  <td>
                     <button
                       type="button"
                       className="secondary"
-                      aria-expanded={resetting === u.username}
-                      onClick={() => {
-                        setNotice(null);
-                        setResetting(resetting === u.username ? null : u.username);
-                      }}
+                      onClick={() => void update(u, { disabled: !u.disabled })}
                     >
-                      Reset password
-                    </button>
-                  )}
-                  {resetting === u.username && (
-                    <ResetPassword
-                      username={u.username}
-                      onDone={() => {
-                        setResetting(null);
-                        setNotice(
-                          `${u.username}'s password was reset and they were signed out. Share the new password with them privately.`,
-                        );
-                      }}
-                    />
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                      {u.disabled ? 'Enable' : 'Disable'}
+                    </button>{' '}
+                    {u.id !== currentUser.id && !u.sso && (
+                      <button
+                        type="button"
+                        className="secondary"
+                        aria-expanded={resetting === u.username}
+                        onClick={() => {
+                          setNotice(null);
+                          setResetting(resetting === u.username ? null : u.username);
+                        }}
+                      >
+                        Reset password
+                      </button>
+                    )}
+                    {resetting === u.username && (
+                      <ResetPassword
+                        username={u.username}
+                        onDone={() => {
+                          setResetting(null);
+                          setNotice(
+                            `${u.username}'s password was reset and they were signed out. Share the new password with them privately.`,
+                          );
+                        }}
+                      />
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       <CreateUser onCreated={result.reload} />
       <AllTokens />
@@ -139,8 +143,8 @@ function CreateUser({ onCreated }: { onCreated: () => void }) {
     onCreated();
   });
   return (
-    <section aria-labelledby="create-user-title">
-      <h2 id="create-user-title">Add a user</h2>
+    <section className="card" aria-labelledby="create-user-title" style={{ marginTop: 20 }}>
+      <h2 id="create-user-title">Add a person</h2>
       <form onSubmit={onSubmit} className="inline-form">
         <Field
           id="new-username"

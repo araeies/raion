@@ -136,7 +136,12 @@ export interface ScrapeTarget {
   metricsPath?: string;
 }
 
-export function prometheusConfig(ws: ResolvedWorkspace, scrapeTargets: ScrapeTarget[]): Artifact[] {
+export function prometheusConfig(
+  ws: ResolvedWorkspace,
+  scrapeTargets: ScrapeTarget[],
+  /** Complete scrape jobs (outside checks), appended as they are. */
+  extraScrapeConfigs: Record<string, unknown>[] = [],
+): Artifact[] {
   const config = {
     global: {
       scrape_interval: '15s',
@@ -155,11 +160,14 @@ export function prometheusConfig(ws: ResolvedWorkspace, scrapeTargets: ScrapeTar
     alerting: {
       alertmanagers: [{ static_configs: [{ targets: ['alertmanager:9093'] }] }],
     },
-    scrape_configs: scrapeTargets.map((t) => ({
-      job_name: t.job,
-      ...(t.metricsPath ? { metrics_path: t.metricsPath } : {}),
-      static_configs: [{ targets: [t.target] }],
-    })),
+    scrape_configs: [
+      ...scrapeTargets.map((t) => ({
+        job_name: t.job,
+        ...(t.metricsPath ? { metrics_path: t.metricsPath } : {}),
+        static_configs: [{ targets: [t.target] }],
+      })),
+      ...extraScrapeConfigs,
+    ],
   };
   return [
     {
@@ -336,13 +344,6 @@ export function grafanaProvisioning(backends: Backends): Artifact[] {
       ),
     },
     {
-      path: 'grafana/provisioning/alerting/raion.yaml',
-      component: 'grafana',
-      description:
-        'Grafana-managed alerting (not used: alerts are Prometheus rules routed by Alertmanager)',
-      content: toYaml({ apiVersion: 1 }, GENERATED_HEADER('Grafana alerting provisioning.')),
-    },
-    {
       path: 'grafana/provisioning/dashboards/raion.yaml',
       component: 'grafana',
       description:
@@ -403,6 +404,9 @@ export function grafanaEnvironment(ws: ResolvedWorkspace): Record<string, string
     GF_PLUGINS_PREINSTALL_DISABLED: 'true',
     GF_NEWS_NEWS_FEED_ENABLED: 'false',
     GF_LOG_LEVEL: 'warn',
+    // Alerts live in Raion: Prometheus rules, delivered by Alertmanager and shown in the Raion
+    // inbox. Grafana's own alerting would be a second, different list of the same alerts.
+    GF_UNIFIED_ALERTING_ENABLED: 'false',
     // Grafana opens on the generated overview dashboard.
     GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH:
       '/etc/grafana/provisioning/dashboards/raion/raion-overview.json',

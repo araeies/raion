@@ -16,11 +16,11 @@ Choose the smallest role that lets someone do their work. In a team that changes
 
 ### The first admin
 
-When `raion server` starts and no users exist, it prints a one-time setup link (see [First run](03-first-run.md#4-create-the-administrator-account)). The link works once, for 30 minutes, and keeps its token after `#`, so the token never appears in server or proxy logs. If it expires, restart the server to get a new one.
+When `raion server` starts and no users exist, it prints a one-time setup link (see [First run](03-first-run.md#3-create-the-administrator-account)). The link works once, for 30 minutes, and keeps its token after `#`, so the token never appears in server or proxy logs. If it expires, restart the server to get a new one.
 
 ### Adding people
 
-- **Web UI:** an admin opens **Users** → **Add a user**: username, initial password, role. Share the password privately.
+- **Web UI:** an admin opens **People** → **Add a person**: username, initial password, role. Share the password privately.
 - **Command line**, on the machine that holds the workspace:
 
   ```sh
@@ -30,13 +30,13 @@ When `raion server` starts and no users exist, it prints a one-time setup link (
 
 ### Changing a role, disabling an account
 
-On **Users**, an admin changes a role from the list, or clicks **Disable** (and later **Enable**). Either signs that person out everywhere immediately. Raion refuses to demote or disable the last active admin.
+On **People**, an admin changes a role from the list, or clicks **Disable** (and later **Enable**). Either signs that person out everywhere immediately. Raion refuses to demote or disable the last active admin.
 
 ### Passwords
 
 - At least 12 characters, and must not contain the username. Stored as scrypt hashes.
-- **Changing your own password:** click your username in the top bar, then **Change your password**. It signs you out everywhere else.
-- **Resetting someone else's password** (admins): on **Users**, click **Reset password** next to the account. It signs that person out; share the new password with them privately.
+- **Changing your own password:** click your name in the sidebar, then **Change your password**. It signs you out everywhere else.
+- **Resetting someone else's password** (admins): on **People**, click **Reset password** next to the account. It signs that person out; share the new password with them privately.
 - Accounts that use [single sign-on](#single-sign-on) have no Raion password; it is managed by the identity provider.
 
 ### Sign-in protection
@@ -93,14 +93,14 @@ All settings are listed in [Configuration](06-configuration.md#single-sign-on).
 - The role comes from a claim of the ID token that lists the person's groups (`groups` by default). Many providers only include it when you ask for an extra scope, or after you configure a groups claim.
 - If the person is in groups for several roles, the highest one wins.
 - If the person is in none of the listed groups, they get the `default` role. **Without a `default`, they are refused**, so only the groups you list get in.
-- The role is read again at every sign-in, so removing someone from a group at the provider takes effect the next time they sign in. To cut someone off immediately, disable their account on **Users**, which also signs them out.
+- The role is read again at every sign-in, so removing someone from a group at the provider takes effect the next time they sign in. To cut someone off immediately, disable their account on **People**, which also signs them out.
 
 ### Accounts
 
 - An account is created the first time someone signs in. Its username comes from the `preferred_username` claim (or the claim you set in `usernameClaim`), else the part of the email address before the `@`, else the provider's subject, lowercased, with other characters replaced by `-`.
 - The account stays linked to the person at the provider, so it keeps working if their username there changes.
 - **Raion never takes over an existing account.** If a Raion account with the same username already exists, the sign-in is refused. Rename or remove the old account first.
-- Accounts that use single sign-on are marked **SSO** on **Users**. Their role and password are managed by the identity provider; admins can still disable them.
+- Accounts that use single sign-on are marked **SSO** on **People**. Their role and password are managed by the identity provider; admins can still disable them.
 
 ### Password sign-in
 
@@ -119,7 +119,7 @@ Scripts and automation use a personal API token instead of a password.
 
 ### Creating one
 
-Click your username in the top bar, then under **API tokens**:
+Click your name in the sidebar, then under **API tokens**:
 
 1. Give it a name that says what it is for, for example `ci-deploy`.
 2. Choose its role. It can be lower than yours, never higher.
@@ -143,7 +143,7 @@ Requests with a token need no CSRF header. See the [HTTP API](reference/api.md#a
 
 ### Revoking one
 
-Click **Revoke** next to the token on your account page. Admins see every active token on **Users** and can revoke any of them. A revoked or expired token is refused immediately.
+Click **Revoke** next to the token on your account page. Admins see every active token on **People** and can revoke any of them. A revoked or expired token is refused immediately.
 
 ## Secrets
 
@@ -241,4 +241,4 @@ raion server --host 0.0.0.0 --port 7600 \
 ## Limitations
 
 - Single sign-on uses OpenID Connect. SAML providers are not supported directly; most can also offer OpenID Connect, or can sit behind a broker such as Keycloak.
-- People are added through single sign-on when they first sign in, not ahead of time, and Raion does not remove accounts when people leave your organization. Their sign-in stops working at the provider; disable the account on **Users** as well.
+- People are added through single sign-on when they first sign in, not ahead of time, and Raion does not remove accounts when people leave your organization. Their sign-in stops working at the provider; disable the account on **People** as well.

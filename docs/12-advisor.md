@@ -57,7 +57,7 @@ Severities:
 
 A fix only ever changes **workspace files**: it creates a new SLO file, or edits a service or `raion.yaml`. It never touches the running stack directly.
 
-1. **Review.** `raion advise --apply` (and **Raion can do this** in the UI) shows the change as a diff before anything is written.
+1. **Review.** `raion advise --apply` (and **Fix it for me** in the UI) shows the change as a diff before anything is written.
 2. **Written as a hand edit.** Edits keep your comments, key order and formatting, and Windows line endings, so the change reads like a hand edit in review.
 3. **Checked first.** A fix is offered only if the whole workspace still validates with it applied.
 4. **Never overwrites someone else's change.** If any file changed after the findings were computed (another user, an editor, a `git pull`), nothing is written and you are asked to look again.

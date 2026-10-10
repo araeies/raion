@@ -1,17 +1,23 @@
 import { useState, type ReactNode } from 'react';
 import { api, type User } from '../api';
 import { ErrorMessage, Field, useSubmit } from '../components';
+import { PageHeader } from '../ui';
 
 /** The signed-in user's own account: password (and, below it, API tokens). */
 export function AccountPage({ user, children }: { user: User; children?: ReactNode }) {
   return (
     <>
-      <h1>Your account</h1>
-      <p className="lead">
-        Signed in as <strong>{user.username}</strong>, with the <strong>{user.role}</strong> role.
-      </p>
+      <PageHeader
+        title="Your account"
+        description={
+          <>
+            Signed in as <strong>{user.username}</strong>, with the <strong>{user.role}</strong>{' '}
+            role.
+          </>
+        }
+      />
       {user.sso ? (
-        <section aria-labelledby="password-title">
+        <section className="card" aria-labelledby="password-title">
           <h2 id="password-title">Password</h2>
           <p className="muted">
             You sign in with single sign-on. Your password and your role are managed by your
@@ -41,7 +47,7 @@ function ChangePassword({ username }: { username: string }) {
     setDone(true);
   });
   return (
-    <section aria-labelledby="password-title">
+    <section className="card" aria-labelledby="password-title">
       <h2 id="password-title">Change your password</h2>
       <p className="muted">
         At least 12 characters, and not containing your username. Changing it signs you out

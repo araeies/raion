@@ -4,7 +4,7 @@ Raion collects three kinds of telemetry, often called signals. This page explain
 
 | Signal      | Answers                                                | Stored in  | Where to look                                                                      |
 | ----------- | ------------------------------------------------------ | ---------- | ---------------------------------------------------------------------------------- |
-| **Metrics** | How much, how fast, how often it fails                 | Prometheus | Service page (Health), service dashboard, Grafana → Explore → Prometheus           |
+| **Metrics** | How much, how fast, how often it fails                 | Prometheus | Application page (Overview), its dashboard, Grafana → Explore → Prometheus         |
 | **Logs**    | What happened, in the application's words              | Loki       | Service dashboard (Logs row), **Raion · Logs** dashboard, Grafana → Explore → Loki |
 | **Traces**  | Where a single request spent its time, across services | Tempo      | Service dashboard (Traces row), **Raion · Traces**, Grafana → Explore → Tempo      |
 
@@ -28,7 +28,7 @@ Raion collects three kinds of telemetry, often called signals. This page explain
 
 At level 2 and above, a log line written while handling a request carries that request's **trace ID**. In Grafana, a log line opens its trace in one click, and a trace shows the logs it wrote. This is how you find "everything about this one failing request".
 
-`raion verify --service <name>` and the service page check this link: the share of log lines with a trace ID, and whether those IDs open a trace. The Advisor reports services where most log lines are not linked.
+`raion verify --service <name>` and the application's **Overview** tab check this link: the share of log lines with a trace ID, and whether those IDs open a trace. The Advisor reports services where most log lines are not linked.
 
 ## Turning signals on and off
 
@@ -58,4 +58,4 @@ In Grafana, **Explore** queries each store directly:
 - **Loki** (LogQL), for example `{service_name="payment-api"} |= "error"`
 - **Tempo** (TraceQL), for example `{resource.service.name="payment-api" && status=error}`
 
-Every service carries the label `service_name`, so the same name finds its metrics, logs and traces. The queries behind the service page's checks are under **Show the queries**.
+Every service carries the label `service_name`, so the same name finds its metrics, logs and traces. The queries behind the application page's checks are under **The queries behind these numbers**.

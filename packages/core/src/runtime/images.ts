@@ -1,3 +1,4 @@
+import type { AgentName } from '@raion/schema';
 /**
  * Container images of the observability runtime, pinned by digest (multi-arch index).
  *
@@ -46,6 +47,11 @@ export const IMAGES = {
     tag: '1.30.4-alpine',
     digest: 'sha256:adf5042a17f4ecdd200c595fa9ffd1be37efb18f89a830bd1a00e4ab4d59d42c',
   },
+  'blackbox-exporter': {
+    image: 'prom/blackbox-exporter',
+    tag: 'v0.29.0',
+    digest: 'sha256:9613f2884689b6fad9f1939f6a3b0388c93a022cfaededb19545b329b5c83dea',
+  },
   cadvisor: {
     image: 'ghcr.io/google/cadvisor',
     tag: 'v0.60.6',
@@ -54,6 +60,33 @@ export const IMAGES = {
 } as const satisfies Record<string, { image: string; tag: string; digest: string }>;
 
 export type ComponentId = keyof typeof IMAGES;
+
+/**
+ * OpenTelemetry agents Raion copies into applications' containers when they start (the images
+ * the OpenTelemetry Kubernetes operator uses). Pinned by digest like the stack's own images.
+ */
+export const AGENT_IMAGES = {
+  nodejs: {
+    image: 'ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-nodejs',
+    tag: '0.78.0',
+    digest: 'sha256:576e2b00bdf9a6040a7e3a497dd5eea4e624f60dcfd28871d9190752a0f18955',
+  },
+  python: {
+    image: 'ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python',
+    tag: '0.66b1',
+    digest: 'sha256:db0fae8e6ca4eb9a48eeacae7ed683c8a93412f4a98107492c0ea42e4e0a5d30',
+  },
+  java: {
+    image: 'ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-java',
+    tag: '2.32.0',
+    digest: 'sha256:9dad1c6e3e2ecee48fc164a19bcfde703510bee972c8cb421689fde89b5f89e9',
+  },
+} as const satisfies Record<AgentName, { image: string; tag: string; digest: string }>;
+
+export function agentImageRef(agent: AgentName): string {
+  const { image, tag, digest } = AGENT_IMAGES[agent];
+  return `${image}:${tag}@${digest}`;
+}
 
 export function imageRef(component: ComponentId): string {
   const { image, tag, digest } = IMAGES[component];

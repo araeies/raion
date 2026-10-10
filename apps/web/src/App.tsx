@@ -2,17 +2,21 @@ import { useEffect, useState } from 'react';
 import { api, type User } from './api';
 import { LoginPage, SetupPage, readSetupToken } from './pages/Auth';
 import { AccountPage } from './pages/Account';
+import { AddApplicationPage } from './pages/AddApplication';
 import { AdvisorPage } from './pages/Advisor';
 import { AlertsPage } from './pages/Alerts';
 import { AuditPage } from './pages/Audit';
 import { MyTokens } from './pages/Tokens';
 import { IntegrationDetailPage, IntegrationsPage } from './pages/Integrations';
 import { RuntimePage } from './pages/Runtime';
+import { SettingsPage } from './pages/Settings';
 import { SlosPage } from './pages/Slos';
 import { ServiceDetailPage, ServicesPage } from './pages/Services';
 import { UsersPage } from './pages/Users';
-import { linkHandler, navigate, usePath } from './router';
-import { useLoad } from './useLoad';
+import { navigate, usePath } from './router';
+import { Shell } from './Shell';
+import { HomePage, NotFound } from './pages/Home';
+import { Loading } from './ui';
 
 type Session =
   | { state: 'loading' }
@@ -49,19 +53,23 @@ export function App() {
       return;
     }
     setSession({ state: 'signed-in', user });
-    if (path === '/login' || path === '/setup') navigate('/services');
+    if (path === '/login' || path === '/setup') navigate('/');
   };
 
   switch (session.state) {
     case 'loading':
-      return <p aria-busy="true">Loading…</p>;
+      return (
+        <div className="auth-page">
+          <Loading label="Starting Raion…" />
+        </div>
+      );
     case 'setup':
       return <SetupPage initialToken={session.token} onDone={signedIn} />;
     case 'anonymous':
       return <LoginPage onLogin={signedIn} />;
     case 'signed-in':
       return (
-        <Shell
+        <Pages
           user={session.user}
           path={path}
           onSignOut={() => setSession({ state: 'anonymous' })}
@@ -70,18 +78,15 @@ export function App() {
   }
 }
 
-function Shell({ user, path, onSignOut }: { user: User; path: string; onSignOut: () => void }) {
-  const workspace = useLoad(() => api.workspace(), 'workspace');
-  const signOut = async () => {
-    await api.logout().catch(() => undefined);
-    onSignOut();
-  };
+function Pages({ user, path, onSignOut }: { user: User; path: string; onSignOut: () => void }) {
   const serviceMatch = /^\/services\/([a-z0-9-]+)$/.exec(path);
   const integrationMatch = /^\/integrations\/([a-z0-9-]+)$/.exec(path);
 
   let page;
-  if (serviceMatch) page = <ServiceDetailPage name={serviceMatch[1]!} user={user} />;
+  if (path === '/services/new') page = <AddApplicationPage user={user} />;
+  else if (serviceMatch) page = <ServiceDetailPage name={serviceMatch[1]!} user={user} />;
   else if (integrationMatch) page = <IntegrationDetailPage name={integrationMatch[1]!} />;
+  else if (path === '/services') page = <ServicesPage user={user} />;
   else if (path === '/integrations') page = <IntegrationsPage />;
   else if (path === '/users' && user.role === 'admin') page = <UsersPage currentUser={user} />;
   else if (path === '/runtime') page = <RuntimePage user={user} />;
@@ -95,72 +100,13 @@ function Shell({ user, path, onSignOut }: { user: User; path: string; onSignOut:
       </AccountPage>
     );
   else if (path === '/audit' && user.role === 'admin') page = <AuditPage />;
-  else page = <ServicesPage />;
-
-  const nav = [
-    { href: '/services', label: 'Services', show: true },
-    { href: '/slos', label: 'SLOs', show: true },
-    { href: '/alerts', label: 'Alerts', show: true },
-    { href: '/advisor', label: 'Advisor', show: true },
-    { href: '/integrations', label: 'Integrations', show: true },
-    { href: '/runtime', label: 'Observability stack', show: true },
-    { href: '/users', label: 'Users', show: user.role === 'admin' },
-    { href: '/audit', label: 'Audit log', show: user.role === 'admin' },
-  ];
+  else if (path === '/settings' && user.role !== 'viewer') page = <SettingsPage user={user} />;
+  else if (path === '/') page = <HomePage user={user} />;
+  else page = <NotFound path={path} />;
 
   return (
-    <>
-      <a className="skip-link" href="#main">
-        Skip to content
-      </a>
-      <header className="topbar">
-        <a className="brand" href="/services" onClick={linkHandler('/services')}>
-          Raion
-        </a>
-        {workspace.state === 'ready' && workspace.data.workspace && (
-          <span className="workspace">
-            {workspace.data.workspace.name} · {workspace.data.workspace.environment} · level{' '}
-            {workspace.data.workspace.level}
-          </span>
-        )}
-        <nav aria-label="Main">
-          <ul>
-            {nav
-              .filter((n) => n.show)
-              .map((n) => (
-                <li key={n.href}>
-                  <a
-                    href={n.href}
-                    onClick={linkHandler(n.href)}
-                    aria-current={
-                      path.startsWith(n.href) || (n.href === '/services' && path === '/')
-                        ? 'page'
-                        : undefined
-                    }
-                  >
-                    {n.label}
-                  </a>
-                </li>
-              ))}
-          </ul>
-        </nav>
-        <a className="external" href="/grafana/" target="_blank" rel="noopener">
-          Grafana ↗
-        </a>
-        <a
-          className="user"
-          href="/account"
-          onClick={linkHandler('/account')}
-          aria-current={path === '/account' ? 'page' : undefined}
-          title="Your account: password and API tokens"
-        >
-          {user.username} <span className="badge">{user.role}</span>
-        </a>
-        <button type="button" className="secondary" onClick={() => void signOut()}>
-          Sign out
-        </button>
-      </header>
-      <main id="main">{page}</main>
-    </>
+    <Shell user={user} path={path} onSignOut={onSignOut}>
+      {page}
+    </Shell>
   );
 }

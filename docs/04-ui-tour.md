@@ -1,131 +1,173 @@
 # A tour of the web UI
 
+The web UI is the main way to use Raion. Everything you need day to day is here: adding applications, seeing their health, understanding alerts, setting reliability goals and deploying changes. You never need to open a configuration file. (If you like terminals, everything here can also be done with the [`raion` command](reference/ui-and-cli.md).)
+
 Open **<http://127.0.0.1:7600>** while `raion server` is running (see [First run](03-first-run.md)) and sign in, with your Raion username and password or, if your organization set it up, with **Sign in with …** ([single sign-on](15-users-and-security.md#single-sign-on)).
 
-The bar at the top is always there:
+**Help is built in.** Look for:
 
-- **Raion** (left): back to Services
-- your **workspace name**, environment and level
-- the menu: **Services**, **SLOs**, **Alerts**, **Advisor**, **Integrations**, **Observability stack**, and **Users** and **Audit log** for admins
-- **Grafana ↗**: opens Grafana in a new tab, already signed in with a matching role
-- your **username and role**, which opens [your account](#your-account), and **Sign out**
+- a **?** next to a word: point at it (or focus it with the keyboard) for a short explanation
+- **What is this?** boxes that explain an idea the first time you meet it
+- **Recommended** on the choice Raion suggests when you are not sure
+- **Technical details**, folded away at the bottom of a section: the exact queries, rules and settings behind what you see, for when you want to look further
 
-What you can change depends on your role. Viewers see everything below; buttons that change something appear for editors and admins, and a few for admins only. See [roles](15-users-and-security.md#roles).
+## The sidebar
 
----
+| Section | Page                    | What it is for                                                                    |
+| ------- | ----------------------- | --------------------------------------------------------------------------------- |
+| Monitor | **Home**                | What needs attention, your next setup step, and all your applications at a glance |
+|         | **Applications**        | Every application, its health, and how to connect it                              |
+|         | **Alerts**              | What is wrong now, in plain words, and what to do about it                        |
+|         | **Reliability goals**   | How reliable each application should be, and whether it is on track               |
+|         | **Advisor**             | Gaps in your monitoring, with fixes Raion can make for you                        |
+| Set up  | **Integrations**        | The technologies Raion understands, and how to set up each                        |
+|         | **Observability stack** | The monitoring tools Raion runs for you: deploy, test, roll back                  |
+|         | **Settings**            | Level, data retention, notifications and teams (editors and admins)               |
+|         | **People**              | Accounts, roles and API tokens (admins)                                           |
+|         | **Audit log**           | Who did what, and when (admins)                                                   |
+| Explore | **Dashboards ↗**        | Grafana, already signed in                                                        |
 
-## Services
+At the bottom: your name and role, which opens [your account](#your-account), and **Sign out**. On a phone, the menu button at the top opens the sidebar.
 
-The home page. Every service in your workspace, with its type and language, team, tier, level, and number of SLOs. Click a service to open its page.
-
-If the workspace has configuration errors, they are listed at the top with the file and line.
-
-### A service's page
-
-| Section                      | What it shows and what you can do                                                                                                                                                                                                                                                            |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Summary**                  | Type, language, team, owner, tier, environment, where it runs, level, repository                                                                                                                                                                                                             |
-| **Health**                   | Requests per second, error rate and p95 latency over the last 5 minutes; whether metrics, logs and traces are arriving; and whether logs are linked to traces. **Show the queries** gives each query to run in Grafana. **Open the … dashboard in Grafana ↗** opens the service's dashboard. |
-| **Alerts**                   | The service's alerts that are firing now. Editors can **Silence…** them.                                                                                                                                                                                                                     |
-| **Connect this service**     | The integration used and the steps to connect the service: what to install, and the Compose override or environment variables. See [Connecting a service](05-connecting-a-service.md).                                                                                                       |
-| **Service level objectives** | The service's SLOs with their error budgets. Editors can add one.                                                                                                                                                                                                                            |
-| **Dependencies**             | What the service depends on (other services, external systems) and which services depend on it                                                                                                                                                                                               |
-| **Configuration**            | The features enabled for the service, and **Show …** for each file that defines it, exactly as written                                                                                                                                                                                       |
+What you can change depends on your role. Viewers see everything; buttons that change something appear for editors and admins, and a few for admins only. See [roles](15-users-and-security.md#roles).
 
 ---
 
-## SLOs
+## Home
 
-Every SLO in the workspace, as a card:
+Where you land after signing in.
 
-- the objective in plain words, for example "**99.9%** of requests that do not fail with a server error, over a rolling 30d"
-- its status: **healthy**, **at risk**, **budget spent**, **no data yet**, or **not evaluated** (with the reason)
-- the current SLI, the **error budget left** (as a bar), and the burn rate over the last hour
-- the description and the error budget policy, if set
+- **At a glance:** alerts firing, applications, reliability goals, and whether Raion's own tools are healthy.
+- **Needs attention:** firing alerts and reliability goals at risk, each linking to where you deal with it. It only appears when something needs you.
+- **Get set up** (editors and admins): a short checklist (add your first application, start monitoring, set a reliability goal) with the next step's button. It disappears once you are done.
+- **Your applications:** a card per application with its health at a glance. **Add an application** starts the guided setup.
 
-**Create an SLO** (editors) opens a form: the service, what to measure (availability, latency or throughput), the objective, the window, and optionally a name, description and policy. Raion checks the SLO can be measured before saving it. **Show as OpenSLO** shows all SLOs in the vendor-neutral OpenSLO format.
+---
 
-See [SLOs and error budgets](10-slos.md).
+## Adding an application
+
+**Applications → Add an application** (or **Add an application** on Home) asks four simple questions, with a recommended answer for each:
+
+1. **Name:** what you call it, for example "Payment API". Raion turns it into a name it can use (`payment-api`) and shows it.
+2. **Where it runs:**
+   - **Docker Compose** or **Docker** on this machine. Raion lists the containers running here, so you can pick yours instead of typing.
+   - **Directly on this machine:** a program started without Docker.
+   - **Cloud or another server**, **Kubernetes**, or **I'm not sure:** Raion watches it from outside, by its web address ([outside checks](05-connecting-a-service.md#applications-that-run-elsewhere)).
+3. **Details:** what kind of application it is (website, API, worker, database…) and its language. Each choice says what it means.
+4. **Recommended setup:** what Raion will set up for it, in plain words (request measurements, error tracking, tracing, alerts for errors, slowness and silence, or availability checks for outside applications). **Set this up for me** does it all.
+
+Next, Raion shows how to connect the application. When it already runs here in Docker Compose, an admin can click **Connect it for me**.
+
+---
+
+## An application's page
+
+Click an application anywhere to open it. Under its name: what it is, its importance (tier), its team and where it runs. **Open dashboard** opens its Grafana dashboard.
+
+| Tab                   | What it shows and what you can do                                                                                                                                                                                                                                                                                                            |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Overview**          | **Health**: requests per second, the share failing and the response time of the slowest 1 in 20 requests, over the last 5 minutes, and whether measurements, logs and traces are arriving. **Over time**: a chart of each over the last hour, 6 hours or 24 hours. Its **Alerts**, explained, and its **Connections** to other applications. |
+| **Connect**           | How to connect it, step by step, with commands to copy. For applications already running here in Docker Compose, **Connect it for me** (admins) restarts it with Raion's settings, after showing exactly what will change. See [Connecting an application](05-connecting-a-service.md).                                                      |
+| **Reliability goals** | Its goals and their error budgets; **Set a goal**.                                                                                                                                                                                                                                                                                           |
+| **Settings**          | Change what it does, its contact, team and importance, its name in your compose file, its outside checks, **what Raion collects** (measurements, logs, traces, container output) and **when to alert** (editors). **Stop monitoring…** removes it.                                                                                           |
+| **Configuration**     | The files that describe it, exactly as written, for those who want to see them.                                                                                                                                                                                                                                                              |
+
+Applications watched from outside show their **outside checks** instead: whether the address answers, how fast, and when its HTTPS certificate expires.
 
 ---
 
 ## Alerts
 
-- A banner says whether **alerting works**. Raion checks it constantly with an always-firing test alert. **Alerts dashboard ↗** opens the alerts dashboard in Grafana.
-- **Firing now**: every active alert, with its severity, service, description, and links to the dashboard and runbook. Editors can **Silence…** an alert: choose for how long (1 hour to 1 week) and say why.
-- **Silences**: active silences, with who created them and why. Editors can **Remove** one.
-- **Recently resolved**: alerts that stopped firing, kept for 30 days.
-- **What Raion watches**: every alert rule Raion generated, with its description.
+One place for everything Raion watches. Grafana's own alerting is turned off, so nothing is shown in two places.
+
+Each alert says, in plain words:
+
+- **what** is wrong, and **which application**
+- **what it means** for your users
+- **why it fired**: the condition, for example "more than 5% of requests failed for 5 minutes in a row"
+- **since when**, and **where it comes from**
+- **what to do**: numbered first steps
+
+**Technical details** shows the exact rule and labels. Editors can **Silence…** an alert while they work on it.
+
+| Tab                    | What it shows                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------- |
+| **Firing now**         | Alerts that are active now, most urgent first                                                     |
+| **About to fire**      | Problems Raion has noticed that become alerts if they last (for example, "for 10 minutes")        |
+| **History**            | Alerts that stopped, for 30 days, including any that started and stopped while the web UI was off |
+| **What Raion watches** | Every check Raion runs, explained                                                                 |
+
+At the top, Raion confirms that **alerting works**. It runs a self-test alert all the time; you see it as "Alerting self-test", never as a problem. Active silences are listed with who created them and why.
 
 See [Alerts and notifications](09-alerts.md).
 
 ---
 
+## Reliability goals
+
+How reliable each application should be ("99.9% of requests succeed, over 30 days") and whether it is on track: **healthy**, **at risk**, **budget spent** or **no data yet**, with the error budget left as a bar. **Set a goal** walks you through it with a recommended goal for the application; each goal can be changed or removed. **OpenSLO format** shows them in the vendor-neutral format.
+
+See [Reliability goals and error budgets](10-slos.md).
+
+---
+
 ## Advisor
 
-Gaps in your observability, most severe first. Each finding says what is wrong, why it matters, what to do, and what was observed. Where Raion can make the fix itself, **Raion can do this** shows the exact change as a diff, and editors can click **Apply this fix**. Fixes change only your workspace files; deploy them from the Observability stack page.
-
-**Check again** re-runs the checks. Findings your team has chosen to ignore are listed separately.
-
-See [The Advisor](12-advisor.md).
+Gaps in your monitoring, most important first. Each says what is wrong, why it matters and what to do. When Raion can make the fix itself, **Fix it for me** shows the exact change first, then makes it (editors). See [The Advisor](12-advisor.md).
 
 ---
 
 ## Integrations
 
-Every integration Raion knows, as a card: what it monitors, whether the data is **Read by the collector** or **Sent by the application**, which languages it applies to, and how many of your services use it. Click one to open its page:
-
-- **What you get**: the signals and dashboards it provides
-- **Using it**: a ready-to-copy example for your workspace, with placeholders for the values you must fill in
-- **Setup** (part of **Using it**): what the application or system needs, for example a read-only monitoring user
-- **Parameters**: every setting, its type, whether it is required, its default, and which ones only accept a secret reference
-- **Services using it**: the services in your workspace that use it
-- **Documentation**: the integration's full guide
-
-See [Integrations](integrations/README.md).
+Every technology Raion understands (Node.js, Python, Java, Go, PostgreSQL, Redis, Nginx, Docker containers, and your own packages). Click one for what you get, how to use it, its settings and which of your applications use it. See [Integrations](integrations/README.md).
 
 ---
 
 ## Observability stack
 
-The state of the open-source components Raion runs for you.
+The monitoring tools Raion runs for you (the collector, Prometheus, Loki, Tempo, Grafana, Alertmanager and their helpers). At the top: whether everything is healthy, and **Deploy** when there are changes. **Test the pipeline** sends a test measurement, log line and trace and checks each one arrives.
 
-| Section                                 | What it shows and what you can do                                                                                                                                                                                                                          |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Status banner**                       | **Healthy**, **Something is wrong** (with what), or **Not deployed yet**                                                                                                                                                                                   |
-| **Open Grafana**, **Test the pipeline** | Editors can send a test metric, log line and trace through the stack and see whether each one is stored                                                                                                                                                    |
-| **Drift notice** (only when needed)     | Changes made to the running stack outside Raion, such as a hand-edited file or a stopped container. Editors can **Restore release …**                                                                                                                      |
-| **Dashboards**                          | Links to every generated Grafana dashboard                                                                                                                                                                                                                 |
-| **Components**                          | Each component, its purpose, whether it is running and ready, and any elevated privileges it needs                                                                                                                                                         |
-| **Monitoring of the stack itself**      | Whether Prometheus can collect metrics from each component                                                                                                                                                                                                 |
-| **Secrets** (admins)                    | The secrets your notification receivers and database integrations need, whether each is set, and a form to set it. Values are never shown.                                                                                                                 |
-| **Pending changes**                     | What applying your workspace would change: components that start, restart or stop, and changed files. **Apply changes** deploys them (editors). Changes that need elevated privileges or affect stored data must be approved by an admin, with a checkbox. |
-| **Generated configuration**             | Every file Raion generates for the components; click one to read it                                                                                                                                                                                        |
-| **Releases**                            | Every deployed version, newest first, with when and by whom                                                                                                                                                                                                |
-| **Sending telemetry**                   | Where applications send OpenTelemetry data (gRPC and HTTP addresses, and the Docker network for containers)                                                                                                                                                |
+| Tab                   | What it shows and what you can do                                                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Components**        | Each tool, what it does, whether it is running and ready                                                                                                                  |
+| **Changes to deploy** | What deploying would change, in plain words. **Deploy** (editors). Changes that need extra privileges or delete stored data need an admin's approval.                     |
+| **Activity**          | Every deployment, rollback, test and restart, from the web UI or the command line, with who started it and its progress log. One started in a terminal appears here live. |
+| **Releases**          | Every deployed version. **Roll back** to an earlier one (editors).                                                                                                        |
+| **Secrets** (admins)  | Passwords and webhook addresses that notifications and integrations need: set them here; values are never shown. Secrets no longer used can be deleted.                   |
+| **Advanced**          | The generated configuration files, where applications send data, and **Stop monitoring**                                                                                  |
 
-Deployments, tests and repairs run in the background; a panel shows their progress and result.
+If something was changed outside Raion (a stopped container, an edited file), a notice offers to **Restore** the deployed release.
 
 See [Applying changes](13-applying-changes.md) and [Is Raion itself healthy?](16-raion-health.md).
 
 ---
 
-## Your account
+## Settings
 
-Click your username in the top bar.
+Editors can see the settings; admins change them, because they affect everyone.
 
-- **Change your password**: your current password, then the new one twice. Changing it signs you out everywhere else. People who sign in with single sign-on change their password at their identity provider instead.
-- **API tokens**: create a token for a script, choose its role (up to your own) and when it expires, and copy it; it is shown only once. The list shows each token's role, expiry, when it was last used, and **Revoke**. See [API tokens](15-users-and-security.md#api-tokens).
+| Tab               | What you set                                                                                                                                |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **General**       | **How much Raion sets up** (level 1, 2 or 3, each explained), how long data is kept, and whether to monitor this machine and each container |
+| **Notifications** | Channels for alerts (Slack, email, webhook) and which one gets alerts no team claims. Credentials are stored as secrets, never in files.    |
+| **Teams**         | Teams, and where each team's alerts go                                                                                                      |
+
+Changes are saved to your workspace files. Deploy them from **Observability stack** to take effect.
 
 ---
 
-## Users (admins)
+## Your account
 
-Every account, with its role and status. Change a role from the list, **Disable** or **Enable** an account, **Reset password** for someone who forgot theirs (it signs them out; share the new password privately), or **Add a user** with a username, an initial password and a role. Changing a role or disabling an account signs that person out immediately. Raion will not let you remove or demote the last active admin.
+Click your name in the sidebar.
 
-Accounts marked **SSO** sign in with single sign-on: their role comes from the identity provider at each sign-in, so it cannot be changed here, and they have no Raion password to reset. They can still be disabled.
+- **Change your password**: your current password, then the new one twice. It signs you out everywhere else. People who sign in with single sign-on change it at their identity provider instead.
+- **API tokens**: create a token for a script, choose its role (up to your own) and when it expires, and copy it; it is shown only once. See [API tokens](15-users-and-security.md#api-tokens).
 
-Below the accounts, **API tokens** lists every active token, with its owner, so an admin can revoke one that is no longer needed or may have leaked.
+---
+
+## People (admins)
+
+Every account, with its role and status. Change a role, **Disable** or **Enable** an account, **Reset password**, or **Add a person**. Changing a role or disabling an account signs that person out immediately. Raion will not let you remove or demote the last active admin. Accounts marked **SSO** get their role from the identity provider. Below, every active API token, which you can revoke.
 
 See [Users, roles and security](15-users-and-security.md).
 
@@ -133,12 +175,10 @@ See [Users, roles and security](15-users-and-security.md).
 
 ## Audit log (admins)
 
-Who did what, newest first: sign-ins (successful and failed), user and password changes, API tokens, secrets, deployments, silences, SLOs and advisor fixes. Each entry has the time, the person, the action, its target, the outcome, the IP address and details, for example which API token was used. Filter by person or by kind of action; **Show older entries** loads the next 100.
+Who did what, newest first: sign-ins, account and token changes, secrets, deployments, silences, changes to applications, goals and settings, and fixes. Changes made from the command line appear as `cli:<user>`. Filter by person or kind of action.
 
 ---
 
-## Grafana
+## Dashboards (Grafana)
 
-**Grafana ↗** in the top bar opens Grafana on the **Raion · Overview** dashboard. You are signed in automatically with the role that matches yours in Raion (viewer, editor or admin); Grafana has no separate login. All of Raion's dashboards are in the **Raion** folder. Use **Explore** to query metrics (Prometheus), logs (Loki) and traces (Tempo) directly.
-
-See [Dashboards](08-dashboards.md) and [Investigating a problem](11-investigating.md).
+**Dashboards ↗** opens Grafana on the **Raion · Overview** dashboard, signed in with the role that matches yours. All of Raion's dashboards are in the **Raion** folder; **Explore** queries metrics, logs and traces directly. See [Dashboards](08-dashboards.md) and [Investigating a problem](11-investigating.md).

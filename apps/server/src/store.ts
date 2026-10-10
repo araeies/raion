@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -62,6 +63,14 @@ export interface AlertRecord extends Omit<AlertRecordInput, 'severity' | 'servic
   firstSeen: string;
   lastSeen: string;
   resolvedAt: string | null;
+  source: AlertSource;
+}
+
+/** A past firing period, from Prometheus' record. */
+export interface AlertHistoryInput {
+  labels: Record<string, string>;
+  start: Date;
+  end: Date;
 }
 
 interface AlertRow {
@@ -76,6 +85,7 @@ interface AlertRow {
   last_seen: string;
   resolved_at: string | null;
   state: string;
+  source: AlertSource;
 }
 
 export interface AuditEntry {
@@ -147,7 +157,16 @@ const MIGRATIONS = [
   `ALTER TABLE users ADD COLUMN sso_issuer TEXT;
    ALTER TABLE users ADD COLUMN sso_subject TEXT;
    CREATE UNIQUE INDEX users_sso ON users(sso_issuer, sso_subject) WHERE sso_issuer IS NOT NULL;`,
+  `CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+   ALTER TABLE alerts ADD COLUMN source TEXT NOT NULL DEFAULT 'alertmanager';`,
 ];
+
+/** Where an alert record came from. */
+export type AlertSource =
+  /** Seen live in Alertmanager by the Raion inbox. */
+  | 'alertmanager'
+  /** Reconstructed from Prometheus' record, for a time the Raion server was not running. */
+  | 'prometheus-history';
 
 /** Password value of accounts that sign in through single sign-on: matches no password. */
 export const NO_PASSWORD = '!sso';
@@ -531,7 +550,89 @@ export class Store {
       lastSeen: r.last_seen,
       resolvedAt: r.resolved_at,
       state: r.state,
+      source: r.source,
     }));
+  }
+
+  /**
+   * Records alerts that fired while the inbox was not watching. An alert the inbox saw firing
+   * before it stopped gets its real end time; periods already recorded are left alone.
+   */
+  recordAlertHistory(periods: readonly AlertHistoryInput[]): number {
+    const rows = this.#db
+      .prepare('SELECT fingerprint, starts_at, alertname, labels, resolved_at FROM alerts')
+      .all() as unknown as Pick<
+      AlertRow,
+      'fingerprint' | 'starts_at' | 'alertname' | 'labels' | 'resolved_at'
+    >[];
+    const known = rows.map((r) => ({
+      ...r,
+      parsed: JSON.parse(r.labels) as Record<string, string>,
+    }));
+    // Alertmanager adds the workspace's external labels, so a record matches when it has every
+    // label of the period.
+    const matches = (record: Record<string, string>, period: Record<string, string>) =>
+      Object.entries(period).every(([k, v]) => record[k] === v);
+    const resolve = this.#db.prepare(
+      'UPDATE alerts SET resolved_at = ? WHERE fingerprint = ? AND starts_at = ?',
+    );
+    const insert = this.#db.prepare(
+      `INSERT OR IGNORE INTO alerts (fingerprint, starts_at, alertname, severity, service, labels, annotations, first_seen, last_seen, resolved_at, state, source)
+       VALUES (?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, 'active', 'prometheus-history')`,
+    );
+    let added = 0;
+    this.#db.exec('BEGIN');
+    try {
+      for (const p of periods) {
+        const alertname = p.labels.alertname ?? 'unknown';
+        const start = p.start.toISOString();
+        const end = p.end.toISOString();
+        const same = known.filter((r) => r.alertname === alertname && matches(r.parsed, p.labels));
+        const open = same.find((r) => r.resolved_at === null && r.starts_at <= end);
+        if (open) {
+          resolve.run(end, open.fingerprint, open.starts_at);
+          open.resolved_at = end;
+          continue;
+        }
+        if (same.some((r) => r.starts_at <= end && (r.resolved_at ?? end) >= start)) continue;
+        const fingerprint = `history:${createHash('sha256')
+          .update(JSON.stringify(Object.entries(p.labels).sort()))
+          .digest('hex')
+          .slice(0, 16)}`;
+        const result = insert.run(
+          fingerprint,
+          start,
+          alertname,
+          p.labels.severity ?? null,
+          p.labels.service_name ?? null,
+          JSON.stringify(p.labels),
+          start,
+          end,
+          end,
+        );
+        added += Number(result.changes);
+      }
+      this.#db.exec('COMMIT');
+    } catch (error) {
+      this.#db.exec('ROLLBACK');
+      throw error;
+    }
+    return added;
+  }
+
+  getSetting(key: string): string | undefined {
+    return (
+      this.#db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+        { value: string } | undefined
+    )?.value;
+  }
+
+  setSetting(key: string, value: string): void {
+    this.#db
+      .prepare(
+        'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value',
+      )
+      .run(key, value);
   }
 
   pruneAlerts(olderThan: Date): void {

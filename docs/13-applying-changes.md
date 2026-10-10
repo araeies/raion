@@ -30,7 +30,7 @@ raion status     # is every component running and ready? is the stack monitoring
 raion verify     # send test telemetry and confirm it is stored
 ```
 
-**In the web UI**, open **Observability stack**. **Pending changes** shows the same plan as `raion plan`. Editors click **Apply changes**; the deployment runs in the background, with its progress shown on the page. Changes that need elevated privileges or affect stored data show a checkbox to approve them, and only admins can apply them.
+**In the web UI**, open **Observability stack**. **Changes to deploy** shows the same plan as `raion plan`, in plain words. Editors click **Deploy these changes**; the deployment runs in the background, with its progress shown on the page and in the **Activity** tab. A deployment started with `raion apply` in a terminal shows up there live too, and only one can run at a time. Changes that need elevated privileges or affect stored data show a checkbox to approve them, and only admins can apply them.
 
 ### `raion plan`
 
@@ -102,11 +102,11 @@ raion drift            # lists each difference; exit code 3 when there is drift
 raion drift --repair   # restore the deployed release (files and containers)
 ```
 
-`raion status` shows drift too. In the web UI, the **Observability stack** page shows a notice listing each difference, and editors can click **Restore release …**. Every repair is recorded in the audit log. Changes to your workspace that are not deployed yet are not drift: they appear under pending changes. See also [Working through Git](14-gitops.md).
+`raion status` shows drift too. In the web UI, the **Observability stack** page shows a notice listing each difference, and editors can click **Restore release …**. Every repair is recorded in the audit log. Changes to your workspace that are not deployed yet are not drift: they appear under **Changes to deploy**. See also [Working through Git](14-gitops.md).
 
 ## Opening Grafana
 
-Start the Raion server (`raion server`), sign in, and open **Grafana** from the top bar, or go to `http://127.0.0.1:7600/grafana/`. You are signed in to Grafana automatically, with a role that matches your Raion role.
+Start the Raion server (`raion server`), sign in, and open **Dashboards ↗** in the sidebar, or go to `http://127.0.0.1:7600/grafana/`. You are signed in to Grafana automatically, with a role that matches your Raion role.
 
 Grafana is not reachable directly: requests go through Raion, which checks your Raion session first.
 
@@ -118,7 +118,7 @@ Applications send OpenTelemetry data (OTLP) to the collector: from this machine 
 
 Raion turns your workspace into ordinary configuration files for each component. To see them:
 
-- **In the web UI:** **Observability stack → Generated configuration**; click a file to read it. A service's page shows the workspace files that define it under **Configuration**.
+- **In the web UI:** **Observability stack → Advanced → Generated configuration**; click a file to read it. An application's **Configuration** tab shows the workspace files that define it.
 - **On the command line:** `raion render observability --out ./generated` writes every generated file to a folder.
 - **Before deploying:** `raion plan` lists the files a change touches; `raion diff` shows the exact lines that change between two versions of a workspace ([Working through Git](14-gitops.md)).
 

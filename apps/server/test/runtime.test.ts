@@ -4,7 +4,13 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { renderWorkspace, writeWorkspace } from '@raion/core';
-import { GatewayClient, type ExecResult, type Runner } from '@raion/deploy';
+import {
+  GatewayClient,
+  OperationJournal,
+  StatePaths,
+  type ExecResult,
+  type Runner,
+} from '@raion/deploy';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
@@ -19,11 +25,12 @@ class TestRuntime extends RuntimeService {
   constructor(
     dir: string,
     readonly fakeGateway: GatewayClient | undefined,
+    docker?: Runner,
   ) {
     const noDocker: Runner = {
       run: () => Promise.resolve<ExecResult>({ stdout: '', stderr: '', code: 0 }),
     };
-    super(dir, noDocker);
+    super(dir, docker ?? noDocker);
   }
   override gateway() {
     return Promise.resolve(this.fakeGateway);
@@ -36,7 +43,7 @@ let store: Store;
 let upstream: Server;
 let received: { url: string; method: string; headers: IncomingHttpHeaders; body: string }[];
 
-async function start(withGateway: boolean) {
+async function start(withGateway: boolean, docker?: Runner) {
   received = [];
   upstream = createServer((req, res) => {
     let body = '';
@@ -63,7 +70,7 @@ async function start(withGateway: boolean) {
     allowedHosts: [HOST],
     secure: false,
     trustProxy: false,
-    runtime: new TestRuntime(dir, withGateway ? gateway : undefined),
+    runtime: new TestRuntime(dir, withGateway ? gateway : undefined, docker),
   });
   const users: Record<string, string> = {};
   for (const role of ['viewer', 'editor', 'admin'] as const) {
@@ -238,12 +245,24 @@ describe('service connection API', () => {
     expect(res.json()).toEqual({ deployed: false, telemetry: null });
   });
 
+  it('returns no history before the stack is deployed, and only offers known periods', async () => {
+    const users = await start(false);
+    const res = await get('/api/v1/services/shop/history?minutes=360', users.viewer);
+    expect(res.json()).toEqual({ deployed: false, history: null });
+    expect((await get('/api/v1/services/shop/history?minutes=7', users.viewer)).statusCode).toBe(
+      400,
+    );
+    expect((await get('/api/v1/services/shop/history')).statusCode).toBe(401);
+    expect((await get('/api/v1/services/nope/history', users.viewer)).statusCode).toBe(404);
+  });
+
   it('lists integrations with their documentation', async () => {
     const users = await start(false);
     const res = await get('/api/v1/integrations', users.viewer);
     const body = res.json<{ integrations: { name: string; source: string; docs: string }[] }>();
     expect(body.integrations.map((i) => i.name)).toEqual([
       'go',
+      'java',
       'nginx',
       'nodejs',
       'postgresql',
@@ -461,5 +480,228 @@ describe('API tokens in use', () => {
     const entry = store.listAudit(10).find((e) => e.action === 'slo.create')!;
     expect(entry.actor).toBe('editor');
     expect(entry.details).toMatchObject({ token: 'slo-bot' });
+  });
+});
+
+describe('operations from the CLI and the web UI', () => {
+  it('shows a CLI operation in the web UI and refuses a second change while it runs', async () => {
+    const users = await start(false);
+    const journal = new OperationJournal(new StatePaths(dir));
+    const cli = journal.begin({ kind: 'apply', via: 'cli', actor: 'cli:alice' });
+    cli.log('Starting components…');
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/runtime/apply',
+      headers: { host: HOST, cookie: users.admin, 'x-raion-csrf': '1' },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ error: { message: string } }>().error.message).toBe(
+      'apply started from the command line by cli:alice is still running; wait for it to finish',
+    );
+
+    const list = (await get('/api/v1/runtime/jobs', users.viewer)).json<{
+      jobs: { id: string; via: string; state: string; log?: unknown }[];
+    }>();
+    expect(list.jobs[0]).toMatchObject({ id: cli.id, via: 'cli', state: 'running' });
+    expect(list.jobs[0]!.log).toBeUndefined();
+    await new Promise((r) => setTimeout(r, 400));
+    const one = (await get(`/api/v1/runtime/jobs/${cli.id}`, users.viewer)).json<{
+      log: string[];
+    }>();
+    expect(one.log).toEqual(['Starting components…']);
+
+    cli.succeed({ release: '0001' });
+    expect((await get(`/api/v1/runtime/jobs/${cli.id}`, users.viewer)).json()).toMatchObject({
+      state: 'succeeded',
+      result: { release: '0001' },
+    });
+    expect((await get('/api/v1/runtime/jobs/not-an-id', users.viewer)).statusCode).toBe(400);
+  });
+});
+
+describe('editing the workspace from the web UI', () => {
+  const edit = (cookie: string, action: object, preview = false) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/v1/workspace/edits${preview ? '/preview' : ''}`,
+      headers: { host: HOST, cookie, 'x-raion-csrf': '1' },
+      payload: { action },
+    });
+
+  it('previews without writing, then writes, and audits the change', async () => {
+    const users = await start(false);
+    const action = {
+      kind: 'service.add',
+      service: { name: 'checkout', type: 'api', language: 'python' },
+    };
+    const preview = await edit(users.editor!, action, true);
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json()).toMatchObject({
+      summary: 'Add the application checkout',
+      changes: [{ path: 'services/checkout.yaml', kind: 'add' }],
+    });
+    await expect(readFile(join(dir, 'services', 'checkout.yaml'), 'utf8')).rejects.toThrow();
+
+    const written = await edit(users.editor!, action);
+    expect(written.statusCode).toBe(201);
+    expect(await readFile(join(dir, 'services', 'checkout.yaml'), 'utf8')).toContain(
+      'name: checkout',
+    );
+    const services = (await get('/api/v1/services', users.viewer)).json<{
+      services: { name: string }[];
+    }>();
+    expect(services.services.map((s) => s.name)).toContain('checkout');
+    expect(store.listAudit(5)[0]).toMatchObject({
+      actor: 'editor',
+      action: 'workspace.edit',
+      target: 'checkout',
+      details: { change: 'service.add', files: ['services/checkout.yaml'] },
+    });
+  });
+
+  it('keeps viewers read-only and workspace-wide settings for admins', async () => {
+    const users = await start(false);
+    expect((await edit(users.viewer!, { kind: 'service.remove', name: 'shop' })).statusCode).toBe(
+      403,
+    );
+    const settings = { kind: 'workspace.update', set: { level: 2 } };
+    expect((await edit(users.editor!, settings)).statusCode).toBe(403);
+    expect((await edit(users.admin!, settings)).statusCode).toBe(201);
+  });
+
+  it('explains why a change is refused', async () => {
+    const users = await start(false);
+    const res = await edit(users.editor!, {
+      kind: 'service.update',
+      name: 'shop',
+      set: { tier: 'super-important' },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json<{ error: { code: string; message: string; diagnostics: unknown[] } }>();
+    expect(body.error.code).toBe('edit_invalid');
+    expect(body.error.message).toMatch(/tier/);
+    expect(body.error.diagnostics.length).toBeGreaterThan(0);
+    expect((await edit(users.editor!, { kind: 'service.remove', name: 'nope' })).statusCode).toBe(
+      404,
+    );
+  });
+});
+
+describe('connecting applications that already run', () => {
+  /** A Docker with one running Compose application and one Raion component. */
+  function fakeDocker(composeFile: string) {
+    const calls: string[][] = [];
+    const runner: Runner = {
+      run: (args) => {
+        calls.push(args);
+        const ok = (stdout: string) => Promise.resolve<ExecResult>({ stdout, stderr: '', code: 0 });
+        if (args[0] === 'ps') return ok('aaa\nbbb\n');
+        if (args[0] === 'inspect') {
+          return ok(
+            JSON.stringify([
+              {
+                Name: '/shopapp-shop-1',
+                Config: {
+                  Image: 'node:24-slim',
+                  Env: ['NODE_VERSION=24.1.0'],
+                  Cmd: ['node', 'server.js'],
+                  Labels: {
+                    'com.docker.compose.project': 'shopapp',
+                    'com.docker.compose.service': 'shop',
+                    'com.docker.compose.project.config_files': composeFile,
+                    'com.docker.compose.project.working_dir': dir,
+                  },
+                },
+                State: { Status: 'running' },
+              },
+              {
+                Name: '/raion-prometheus-1',
+                Config: {
+                  Image: 'prom/prometheus',
+                  Labels: { 'dev.raion.component': 'prometheus' },
+                },
+                State: { Status: 'running' },
+              },
+            ]),
+          );
+        }
+        return ok('');
+      },
+    };
+    return { runner, calls };
+  }
+
+  it('lists running applications, guesses what they are, and leaves Raion itself out', async () => {
+    const composeFile = join(dir, 'compose.yaml');
+    await writeFile(composeFile, 'services: {}\n');
+    const users = await start(false, fakeDocker(composeFile).runner);
+    const body = (await get('/api/v1/discovery', users.editor)).json<{
+      containers: { container: string; monitoredAs: string | null; guess: { language?: string } }[];
+    }>();
+    expect(body.containers).toEqual([
+      expect.objectContaining({
+        container: 'shopapp-shop-1',
+        monitoredAs: 'shop',
+        guess: { language: 'nodejs' },
+      }),
+    ]);
+    expect((await get('/api/v1/discovery', users.viewer)).statusCode).toBe(403);
+  });
+
+  it('shows admins exactly what it will do, then restarts the application with the settings', async () => {
+    const composeFile = join(dir, 'compose.yaml');
+    await writeFile(composeFile, 'services: {}\n');
+    const docker = fakeDocker(composeFile);
+    const users = await start(false, docker.runner);
+    expect((await get('/api/v1/services/shop/connect-running', users.editor)).statusCode).toBe(403);
+    const preview = (await get('/api/v1/services/shop/connect-running', users.admin)).json<{
+      project: string;
+      command: string;
+      override: string;
+      settings: string[];
+    }>();
+    expect(preview.project).toBe('shopapp');
+    expect(preview.command).toContain(`-f ${composeFile} -f `);
+    expect(preview.command).toMatch(/up -d shop$/);
+    expect(preview.settings).toContain('OTEL_SERVICE_NAME');
+    expect(preview.override).toContain('shop:');
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/services/shop/connect-running',
+      headers: { host: HOST, cookie: users.admin, 'x-raion-csrf': '1' },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(202);
+    const { job } = res.json<{ job: string }>();
+    for (let i = 0; i < 50; i++) {
+      const state = (await get(`/api/v1/runtime/jobs/${job}`, users.viewer)).json<{
+        state: string;
+      }>().state;
+      if (state !== 'running') break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect((await get(`/api/v1/runtime/jobs/${job}`, users.viewer)).json()).toMatchObject({
+      kind: 'connect',
+      state: 'succeeded',
+    });
+    const up = docker.calls.find((c) => c[0] === 'compose')!;
+    expect(up.slice(0, 3)).toEqual(['compose', '-p', 'shopapp']);
+    expect(up.slice(-3)).toEqual(['up', '-d', 'shop']);
+    expect(await readFile(join(dir, '.raion', 'connect', 'shopapp.raion.yaml'), 'utf8')).toContain(
+      'OTEL_SERVICE_NAME',
+    );
+    expect(
+      store.listAudit(5).some((e) => e.action === 'service.connect' && e.outcome === 'success'),
+    ).toBe(true);
+  });
+
+  it('explains when the application is not running', async () => {
+    const users = await start(false);
+    const res = await get('/api/v1/services/shop/connect-running', users.admin);
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ error: { code: string } }>().error.code).toBe('not_running');
   });
 });

@@ -16,3 +16,8 @@ export * from './slo-status.js';
 export * from './advisor-facts.js';
 export * from './drift.js';
 export * from './compare.js';
+export * from './alert-states.js';
+export * from './operations.js';
+export * from './discovery.js';
+export * from './connect-running.js';
+export * from './service-history.js';

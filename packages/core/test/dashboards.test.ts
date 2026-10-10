@@ -120,7 +120,7 @@ describe('generated dashboards', async () => {
 describe('dashboards follow the workspace', () => {
   it('has no golden-signal panels for a service without HTTP metrics', () => {
     const bundle = generateRuntime(
-      workspace('  services:\n    - name: batch\n      type: worker\n      language: java\n'),
+      workspace('  services:\n    - name: batch\n      type: worker\n      language: php\n'),
     );
     const svc = dashboards(bundle).find((d) => d.json.uid === 'raion-svc-batch')!.json;
     const titles = svc.panels.map((p) => p.title);

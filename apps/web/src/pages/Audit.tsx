@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api, type AuditEntry } from '../api';
 import { ErrorMessage } from '../components';
 import { useLoad } from '../useLoad';
+import { Loading, PageHeader } from '../ui';
 
 const ACTIONS = [
   { value: '', label: 'All actions' },
@@ -40,7 +41,7 @@ export function AuditPage() {
   // Pages loaded for an earlier filter do not belong to this one.
   const extra = olderKey === key ? older : [];
 
-  if (first.state === 'loading') return <p aria-busy="true">Loading the audit log…</p>;
+  if (first.state === 'loading') return <Loading label="Loading the audit log…" />;
   if (first.state === 'error') return <ErrorMessage error={first.error} />;
   const entries = [...first.data.entries, ...extra];
 
@@ -63,13 +64,12 @@ export function AuditPage() {
 
   return (
     <>
-      <h1>Audit log</h1>
-      <p className="lead">
-        Who did what, and when: sign-ins, user and password changes, API tokens, secrets (by name,
-        never the value), deployments, silences, SLOs and advisor fixes. Newest first.
-      </p>
+      <PageHeader
+        title="Audit log"
+        description="Who did what, and when, from the web UI, the API and the command line: sign-ins, changes to people and settings, secrets (by name, never the value), deployments, silences and more. Newest first."
+      />
       <form
-        className="filters"
+        className="filters card"
         onSubmit={(e) => {
           e.preventDefault();
           setEnd(false);
@@ -100,41 +100,45 @@ export function AuditPage() {
           Nothing recorded{filter.actor || filter.action ? ' for this filter' : ''}.
         </p>
       ) : (
-        <table>
-          <caption className="visually-hidden">Audit log entries</caption>
-          <thead>
-            <tr>
-              <th scope="col">When</th>
-              <th scope="col">Who</th>
-              <th scope="col">Action</th>
-              <th scope="col">On</th>
-              <th scope="col">Result</th>
-              <th scope="col">From</th>
-              <th scope="col">Details</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((e) => (
-              <tr key={e.id}>
-                <td>
-                  <time dateTime={e.ts}>{new Date(e.ts).toLocaleString()}</time>
-                </td>
-                <td>{e.actor ?? <span className="muted">–</span>}</td>
-                <td>
-                  <code>{e.action}</code>
-                </td>
-                <td>{e.target ?? ''}</td>
-                <td>
-                  <span className={`badge ${e.outcome === 'success' ? 'badge-ok' : 'badge-error'}`}>
-                    {e.outcome}
-                  </span>
-                </td>
-                <td>{e.ip ?? ''}</td>
-                <td className="muted">{details(e)}</td>
+        <div className="table-wrap" style={{ marginTop: 16 }}>
+          <table>
+            <caption className="visually-hidden">Audit log entries</caption>
+            <thead>
+              <tr>
+                <th scope="col">When</th>
+                <th scope="col">Who</th>
+                <th scope="col">Action</th>
+                <th scope="col">On</th>
+                <th scope="col">Result</th>
+                <th scope="col">From</th>
+                <th scope="col">Details</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {entries.map((e) => (
+                <tr key={e.id}>
+                  <td>
+                    <time dateTime={e.ts}>{new Date(e.ts).toLocaleString()}</time>
+                  </td>
+                  <td>{e.actor ?? <span className="muted">–</span>}</td>
+                  <td>
+                    <code>{e.action}</code>
+                  </td>
+                  <td>{e.target ?? ''}</td>
+                  <td>
+                    <span
+                      className={`badge ${e.outcome === 'success' ? 'badge-ok' : 'badge-error'}`}
+                    >
+                      {e.outcome}
+                    </span>
+                  </td>
+                  <td>{e.ip ?? ''}</td>
+                  <td className="muted">{details(e)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {!end && entries.length >= 100 && (
         <button type="button" className="secondary" onClick={() => void loadOlder()}>

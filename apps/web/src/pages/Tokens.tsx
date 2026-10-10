@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { tokensApi, type ApiTokenView, type Role, type User } from '../api';
 import { ErrorMessage, Field, useSubmit } from '../components';
 import { useLoad } from '../useLoad';
+import { Loading } from '../ui';
 
 const ROLES: Role[] = ['viewer', 'editor', 'admin'];
 const EXPIRY = [
@@ -30,38 +31,40 @@ function TokenTable({
 }) {
   if (tokens.length === 0) return <p className="muted">No tokens.</p>;
   return (
-    <table>
-      <thead>
-        <tr>
-          <th scope="col">Name</th>
-          {showOwner && <th scope="col">Owner</th>}
-          <th scope="col">Role</th>
-          <th scope="col">Expires</th>
-          <th scope="col">Last used</th>
-          <th scope="col">Status</th>
-          <th scope="col">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {tokens.map((t) => (
-          <tr key={t.id}>
-            <th scope="row">{t.name}</th>
-            {showOwner && <td>{t.username}</td>}
-            <td>{t.role}</td>
-            <td>{date(t.expiresAt)}</td>
-            <td>{date(t.lastUsedAt)}</td>
-            <td>{status(t)}</td>
-            <td>
-              {status(t) === 'active' && (
-                <button type="button" className="secondary" onClick={() => onRevoke(t)}>
-                  Revoke
-                </button>
-              )}
-            </td>
+    <div className="table-wrap" style={{ marginTop: 14 }}>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            {showOwner && <th scope="col">Owner</th>}
+            <th scope="col">Role</th>
+            <th scope="col">Expires</th>
+            <th scope="col">Last used</th>
+            <th scope="col">Status</th>
+            <th scope="col">Actions</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {tokens.map((t) => (
+            <tr key={t.id}>
+              <th scope="row">{t.name}</th>
+              {showOwner && <td>{t.username}</td>}
+              <td>{t.role}</td>
+              <td>{date(t.expiresAt)}</td>
+              <td>{date(t.lastUsedAt)}</td>
+              <td>{status(t)}</td>
+              <td>
+                {status(t) === 'active' && (
+                  <button type="button" className="secondary" onClick={() => onRevoke(t)}>
+                    Revoke
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -94,7 +97,7 @@ export function MyTokens({ user }: { user: User }) {
   };
   const allowed = ROLES.slice(0, ROLES.indexOf(user.role) + 1);
   return (
-    <section aria-labelledby="tokens-title">
+    <section className="card" aria-labelledby="tokens-title">
       <h2 id="tokens-title">API tokens</h2>
       <p className="muted">
         For scripts and automation that use Raion's HTTP API: send the token in an{' '}
@@ -174,12 +177,12 @@ export function AllTokens() {
     }
   };
   return (
-    <section aria-labelledby="all-tokens-title">
+    <section className="card" aria-labelledby="all-tokens-title" style={{ marginTop: 20 }}>
       <h2 id="all-tokens-title">API tokens</h2>
       <p className="muted">
         Every user's tokens. Revoke one that is no longer needed or may have leaked.
       </p>
-      {result.state === 'loading' && <p aria-busy="true">Loading tokens…</p>}
+      {result.state === 'loading' && <Loading label="Loading tokens…" />}
       {result.state === 'error' && <ErrorMessage error={result.error} />}
       {result.state === 'ready' && (
         <TokenTable

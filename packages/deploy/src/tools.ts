@@ -61,6 +61,12 @@ function checks(paths: StatePaths, staging: string): CheckSpec[] {
       mounts: [[join(staging, 'tempo'), '/etc/tempo']],
     },
     {
+      component: 'blackbox-exporter',
+      tool: 'blackbox_exporter --config.check',
+      args: ['--config.file=/etc/blackbox/blackbox.yml', '--config.check'],
+      mounts: [[join(staging, 'blackbox-exporter'), '/etc/blackbox']],
+    },
+    {
       component: 'gateway',
       tool: 'nginx -t',
       entrypoint: 'nginx',

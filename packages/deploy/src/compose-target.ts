@@ -137,8 +137,15 @@ export class DockerComposeTarget implements DeploymentTarget {
     return results;
   }
 
-  async validate(bundle: RuntimeBundle): Promise<ToolCheck[]> {
+  /** Checks the generated configuration with each component's own validator. */
+  async validate(
+    bundle: RuntimeBundle,
+    onProgress: (message: string) => void = () => undefined,
+  ): Promise<ToolCheck[]> {
     ensureRuntimeSecrets(this.paths);
+    // The validators run in the components' images: download them first, so no check is
+    // cut short by a download.
+    await pullMissingImages(this.runner, bundle, onProgress);
     return validateWithTools(this.runner, this.paths, bundle);
   }
 

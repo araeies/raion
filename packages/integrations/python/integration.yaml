@@ -17,6 +17,21 @@ spec:
     the application is started through "opentelemetry-instrument".
   languages: [python]
 
+  parameters:
+    injectAgent:
+      type: boolean
+      default: false
+      description: >-
+        Add the OpenTelemetry agent when the container starts, instead of installing packages
+        and changing the start command: nothing in your image changes (Docker Compose only).
+        Works with Python 3.9 and newer.
+    alpine:
+      type: boolean
+      default: false
+      description: >-
+        With injectAgent: the application's image is based on Alpine Linux (musl), which needs
+        a different build of the agent.
+
   requirements:
     - kind: packages
       manager: pip
@@ -25,12 +40,14 @@ spec:
         Add these to your application's requirements, then add the instrumentation for the
         libraries you use: "opentelemetry-bootstrap -a requirements" prints them (for example
         opentelemetry-instrumentation-flask). Pin the versions you test with.
+      when: { param: injectAgent, equals: false }
     - kind: command
       description: >-
         Start the application through opentelemetry-instrument, for example
         "opentelemetry-instrument python app.py". It loads the SDK and instruments the
         libraries before your code runs. With a pre-forking server (gunicorn, uWSGI), see the
         integration guide.
+      when: { param: injectAgent, equals: false }
 
   instrumentation:
     env:
@@ -46,6 +63,19 @@ spec:
       OTEL_SEMCONV_STABILITY_OPT_IN: http
       # Sends records of the standard logging module, with the trace and span of the request.
       OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: 'true'
+      # With the injected agent: Python loads it at start-up from the shared volume.
+      PYTHONPATH:
+        cases:
+          - when: { param: injectAgent, equals: true }
+            value: /otel-auto-instrumentation/opentelemetry/instrumentation/auto_instrumentation:/otel-auto-instrumentation
+    agent:
+      image: python
+      path:
+        cases:
+          - when: { param: alpine, equals: true }
+            value: /autoinstrumentation-musl/.
+          - value: /autoinstrumentation/.
+      when: { param: injectAgent, equals: true }
 
   capabilities:
     - id: http.server

@@ -1,3 +1,4 @@
+import type { AlertGuide } from './alerts.js';
 import type { CollectorReceiver } from '@raion/schema';
 import type { ResolvedService } from '../model.js';
 import { q, type PanelSpec, type RowSpec } from './dashboard-builder.js';
@@ -333,6 +334,7 @@ export interface IntegrationAlert {
   severity: 'critical' | 'warning';
   summary: string;
   description: string;
+  guide: AlertGuide;
 }
 
 /** Alerts for a pulled service. Severity of "the service cannot be read" follows its tier. */
@@ -354,6 +356,16 @@ export function integrationAlerts(svc: ResolvedService): IntegrationAlert[] {
       description:
         `Metrics of ${svc.name} could not be read for 5 minutes. Either ${svc.name} is down or unreachable, ` +
         'or its monitoring credentials are wrong. "raion verify --service" shows the reason; the collector\'s log has the details.',
+      guide: {
+        title: `Raion cannot read ${svc.name}`,
+        meaning: `Raion checks ${svc.name} by connecting to it regularly, and those checks are failing. Either ${svc.name} is down or unreachable, or the monitoring sign-in details are wrong. While this lasts, Raion cannot see its health.`,
+        condition: `No measurements could be read from ${svc.name} for 5 minutes. This also fires if it was never readable, for example after a typing mistake in its address.`,
+        action: [
+          `Check that ${svc.name} is running.`,
+          `Open ${svc.name} in Raion and use "Check the connection": it shows why reading fails.`,
+          'If the password or address changed, update them in its settings in Raion.',
+        ],
+      },
     },
   ];
   switch (receiver) {
@@ -366,6 +378,15 @@ export function integrationAlerts(svc: ResolvedService): IntegrationAlert[] {
           severity: 'warning',
           summary: `${svc.name}: {{ $value | humanizePercentage }} of connections in use`,
           description: `Over 85% of max_connections of ${svc.name} have been in use for 10 minutes. When the limit is reached, new connections fail. Look for connection leaks, or use a connection pool.`,
+          guide: {
+            title: 'The database is running out of connections',
+            meaning: `Almost all of the connections ${svc.name} allows are in use. When none are left, applications cannot reach the database and fail.`,
+            condition: `More than 85% of the allowed connections (PostgreSQL's max_connections) have been in use for 10 minutes.`,
+            action: [
+              'Check whether an application opens connections without closing them (a connection leak), for example after a recent change.',
+              'Use a connection pool in your applications, or raise max_connections if the database has room.',
+            ],
+          },
         },
         {
           alert: 'PostgresDeadlocks',
@@ -374,6 +395,15 @@ export function integrationAlerts(svc: ResolvedService): IntegrationAlert[] {
           severity: 'warning',
           summary: `${svc.name}: {{ $value | humanize }} deadlocks in 10 minutes`,
           description: `Transactions on ${svc.name} were aborted because they waited on each other. The PostgreSQL log names the statements; take locks in a consistent order.`,
+          guide: {
+            title: 'Database transactions are blocking each other',
+            meaning: `Some changes to ${svc.name} were cancelled because two of them were waiting for each other (a deadlock). The application saw an error for those requests.`,
+            condition: 'At least one deadlock happened in the last 10 minutes.',
+            action: [
+              'Read the PostgreSQL log: it names the statements involved.',
+              'In your application, change rows in a consistent order, and keep transactions short.',
+            ],
+          },
         },
       );
       break;
@@ -386,6 +416,16 @@ export function integrationAlerts(svc: ResolvedService): IntegrationAlert[] {
           severity: 'warning',
           summary: `${svc.name}: {{ $value | humanizePercentage }} of maxmemory used`,
           description: `${svc.name} has used over 90% of maxmemory for 10 minutes. It will evict keys or reject writes, depending on its eviction policy.`,
+          guide: {
+            title: 'The cache is almost full',
+            meaning: `${svc.name} has used nearly all the memory it is allowed. Depending on its settings it will start removing stored data, or refuse new data.`,
+            condition:
+              'More than 90% of the allowed memory (Redis maxmemory) has been in use for 10 minutes.',
+            action: [
+              'Check what is being stored and whether entries have an expiry time.',
+              'Raise maxmemory if the machine has room.',
+            ],
+          },
         },
         {
           alert: 'RedisRejectingConnections',
@@ -394,6 +434,15 @@ export function integrationAlerts(svc: ResolvedService): IntegrationAlert[] {
           severity: 'warning',
           summary: `${svc.name} rejected {{ $value | humanize }} connections`,
           description: `${svc.name} refused connections because maxclients was reached. Clients see errors.`,
+          guide: {
+            title: 'The cache is refusing connections',
+            meaning: `${svc.name} reached the number of connections it allows and turned new ones away. Applications using it saw errors.`,
+            condition: 'At least one connection was refused in the last 5 minutes.',
+            action: [
+              'Check whether an application opens connections without closing them.',
+              'Raise maxclients if the machine has room.',
+            ],
+          },
         },
       );
       break;
@@ -405,6 +454,15 @@ export function integrationAlerts(svc: ResolvedService): IntegrationAlert[] {
         severity: 'warning',
         summary: `${svc.name} dropped {{ $value | humanize }} connections`,
         description: `${svc.name} accepted connections it could not handle (worker_connections limit). Clients see errors. Raise worker_connections or add capacity.`,
+        guide: {
+          title: 'The web server is dropping connections',
+          meaning: `${svc.name} accepted connections it could not handle, so some visitors got errors.`,
+          condition: 'At least one connection was dropped in the last 5 minutes.',
+          action: [
+            'Raise worker_connections in the Nginx configuration, or add capacity.',
+            'Check whether traffic suddenly increased.',
+          ],
+        },
       });
       break;
   }

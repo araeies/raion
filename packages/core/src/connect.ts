@@ -1,3 +1,5 @@
+import { AGENT_MOUNT, type AgentName } from '@raion/schema';
+import { agentImageRef } from './runtime/images.js';
 import {
   interpolate,
   registryFor,
@@ -25,7 +27,7 @@ const INSTALL: Record<'npm' | 'pip' | 'go', string> = {
 /** Everything needed to connect one service to the observability stack. */
 export interface ServiceConnection {
   service: string;
-  runtime: 'compose' | 'host';
+  runtime: 'compose' | 'host' | 'remote';
   /** Name of the service in the user's compose file (compose runtime only). */
   composeService?: string;
   integration?: { name: string; displayName: string; implicit: boolean };
@@ -41,6 +43,11 @@ export interface ServiceConnection {
   env: [string, string][];
   /** Docker logging driver that sends the container's stdout/stderr to the collector. */
   logging?: { driver: 'fluentd'; options: Record<string, string> };
+  /**
+   * An OpenTelemetry agent copied into the container when it starts, so the image needs no
+   * change (Docker Compose only): from `path` in the pinned `image`, to AGENT_MOUNT.
+   */
+  agent?: { name: AgentName; image: string; path: string };
   requirements: Requirement[];
   notes: string[];
 }
@@ -106,6 +113,17 @@ export function connectService(
     return spec?.instrumentation ?? spec?.collector;
   });
   const logging = containerLogging(ws, svc);
+  if (svc.runtime.type === 'remote') {
+    return {
+      ...base,
+      supported: false,
+      env: [],
+      requirements: [],
+      notes: [
+        `Nothing to connect: ${svc.name} runs elsewhere, so Raion watches it from outside by visiting ${svc.checks.map((c) => c.url).join(' and ') || 'its address'}.`,
+      ],
+    };
+  }
   if (!ref) {
     return {
       ...base,
@@ -123,6 +141,19 @@ export function connectService(
 
   const manifest = registry.get(ref.name)!.manifest;
   const vars = variables(ws, svc);
+  const holds = (when?: { param: string; equals: boolean }) =>
+    !when || ref.params[when.param] === when.equals;
+  const agentSpec = manifest.spec.instrumentation?.agent;
+  const agentPath =
+    agentSpec && holds(agentSpec.when)
+      ? typeof agentSpec.path === 'string'
+        ? agentSpec.path
+        : agentSpec.path.cases.find((c) => holds(c.when))?.value
+      : undefined;
+  const agent =
+    agentSpec && agentPath && svc.runtime.type === 'compose'
+      ? { name: agentSpec.image, image: agentImageRef(agentSpec.image), path: agentPath }
+      : undefined;
   const env: [string, string][] = [];
   for (const [key, value] of Object.entries(manifest.spec.instrumentation?.env ?? {})) {
     const template =
@@ -136,6 +167,16 @@ export function connectService(
   if (env.some(([key]) => key === 'NODE_OPTIONS')) {
     notes.push(
       'NODE_OPTIONS is set by Raion. If your service already sets NODE_OPTIONS, combine both values.',
+    );
+  }
+  if (agentSpec && agentPath && svc.runtime.type !== 'compose') {
+    notes.push(
+      'Adding the agent when the application starts only works in Docker Compose. Install it in the application instead, as its guide explains.',
+    );
+  }
+  if (agent) {
+    notes.push(
+      `Raion adds the OpenTelemetry agent when the container starts: a small helper container copies it into a shared volume first. Your image does not change.`,
     );
   }
   const pull = manifest.spec.collector !== undefined;
@@ -164,16 +205,19 @@ export function connectService(
     supported: true,
     env,
     ...(logging ? { logging } : {}),
-    requirements: manifest.spec.requirements.map((r) =>
-      r.kind === 'packages'
-        ? {
-            kind: r.kind,
-            description: r.description,
-            packages: r.packages,
-            command: `${INSTALL[r.manager]} ${r.packages.join(' ')}`,
-          }
-        : { kind: r.kind, description: r.description },
-    ),
+    ...(agent ? { agent } : {}),
+    requirements: manifest.spec.requirements
+      .filter((r) => holds(r.when))
+      .map((r) =>
+        r.kind === 'packages'
+          ? {
+              kind: r.kind,
+              description: r.description,
+              packages: r.packages,
+              command: `${INSTALL[r.manager]} ${r.packages.join(' ')}`,
+            }
+          : { kind: r.kind, description: r.description },
+      ),
     notes,
   };
 }
@@ -188,9 +232,31 @@ export function composeOverride(
 ): string {
   const network = ingestNetworkName(ws.target.compose.projectName);
   const services: Record<string, unknown> = {};
+  const volumes: Record<string, object> = {};
   for (const c of connections) {
     if (c.runtime !== 'compose' || !(c.supported || c.logging)) continue;
+    const helper = `raion-agent-${c.composeService!}`;
+    if (c.agent) {
+      // Copies the agent into a volume, then exits. Nothing else: no network, no privileges.
+      services[helper] = {
+        image: c.agent.image,
+        command: ['cp', '-r', c.agent.path, `${AGENT_MOUNT}/`],
+        volumes: [`${helper}:${AGENT_MOUNT}`],
+        network_mode: 'none',
+        read_only: true,
+        cap_drop: ['ALL'],
+        security_opt: ['no-new-privileges:true'],
+        restart: 'no',
+      };
+      volumes[helper] = {};
+    }
     services[c.composeService!] = {
+      ...(c.agent
+        ? {
+            depends_on: { [helper]: { condition: 'service_completed_successfully' } },
+            volumes: [`${helper}:${AGENT_MOUNT}:ro`],
+          }
+        : {}),
       ...(c.logging ? { logging: c.logging } : {}),
       // Compose interpolates "$", so literal dollars are escaped.
       ...(c.env.length > 0
@@ -202,7 +268,11 @@ export function composeOverride(
     };
   }
   return toYaml(
-    { services, networks: { [network]: { external: true, name: network } } },
+    {
+      services,
+      networks: { [network]: { external: true, name: network } },
+      ...(Object.keys(volumes).length > 0 ? { volumes } : {}),
+    },
     `Raion: connects your services to the observability stack (workspace "${ws.name}").
 Generated by "raion connect". Regenerate it after changing services; do not edit.
 Use it next to your own compose file:

@@ -408,7 +408,10 @@ describe('personal API tokens', () => {
     expect(token).toMatch(/^raion_[0-9a-f]{16}_[A-Za-z0-9_-]{43}$/);
 
     const list = await request('GET', '/api/v1/tokens', { cookie: editor });
-    expect(list.body).not.toContain(token.split('_')[2]);
+    // The secret follows "raion_" and the 16-character ID; it may itself contain "_".
+    const secret = token.slice('raion_'.length + 17);
+    expect(secret).toHaveLength(43);
+    expect(list.body).not.toContain(secret);
     expect(list.json<{ tokens: { name: string }[] }>().tokens.map((t) => t.name)).toEqual([
       'deploy-bot',
     ]);

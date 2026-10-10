@@ -10,10 +10,8 @@ import {
   writeWorkspace,
   type InitOptions,
 } from '@raion/core';
-import { stateRoot } from '@raion/deploy';
 import { DNS_LABEL, LANGUAGES, SERVICE_TYPES, toJsonSchema, type Level } from '@raion/schema';
-import { AuthService, passwordProblem, ROLES, Store, USERNAME, type Role } from '@raion/server';
-import { ask, askHidden, Cancelled, choose, readStdin } from './prompt.js';
+import { ask, Cancelled, choose } from './prompt.js';
 
 export const EXIT = { OK: 0, INVALID: 1, USAGE: 2 } as const;
 
@@ -81,14 +79,16 @@ export interface InitFlags {
   language?: string;
   runtime?: string;
   yes?: boolean;
+  format?: 'text' | 'json';
 }
 
 export async function initCommand(
   dir: string | undefined,
   flags: InitFlags,
-  io: Output,
+  rawIo: Output,
   interactive: boolean,
 ): Promise<number> {
+  const { io, emit } = structured(rawIo, flags.format);
   const workspaceDir = resolve(dir ?? DEFAULT_WORKSPACE_DIR);
   if (existsSync(join(workspaceDir, WORKSPACE_FILE))) {
     io.err(`${join(workspaceDir, WORKSPACE_FILE)} already exists. Nothing was changed.`);
@@ -98,6 +98,7 @@ export async function initCommand(
   const files = renderWorkspace(options);
   try {
     const written = await writeWorkspace(workspaceDir, files);
+    emit({ workspace: workspaceDir, files: written });
     io.out(`Created a Raion workspace in ${workspaceDir}:`);
     for (const path of written) io.out(`  ${path}`);
     io.out(
@@ -298,65 +299,20 @@ export function schemaCommand(io: Output): number {
   return EXIT.OK;
 }
 
-// ----- users ---------------------------------------------------------------------------
+/** What a command reports when run with --format json. */
+export type Emit = (result: Record<string, unknown>) => void;
 
-function openStore(dir: string | undefined): Store {
-  const workspaceDir = resolveWorkspaceDir(dir);
-  if (!existsSync(join(workspaceDir, WORKSPACE_FILE))) {
-    throw new UsageError(
-      `no ${WORKSPACE_FILE} in ${workspaceDir}; pass --workspace or run "raion init"`,
-    );
-  }
-  return new Store(join(stateRoot(workspaceDir), 'raion.db'));
-}
-
-export async function usersAddCommand(
-  username: string,
-  opts: { role: string; workspace?: string; passwordStdin?: boolean },
+/**
+ * For --format json: human-readable progress goes to standard error, and the command's result
+ * is printed to standard output as one JSON document, so scripts can parse it.
+ */
+export function structured(
   io: Output,
-): Promise<number> {
-  const name = username.trim().toLowerCase();
-  if (!USERNAME.test(name))
-    throw new UsageError('username must be 2-64 characters: a-z, 0-9, ".", "_" or "-"');
-  const role: Role = oneOf(opts.role, ROLES, '--role');
-  const store = openStore(opts.workspace);
-  try {
-    if (store.findUser(name)) throw new UsageError(`user "${name}" already exists`);
-    let password: string;
-    if (opts.passwordStdin) {
-      password = await readStdin();
-    } else {
-      password = await askHidden(`Password for ${name}: `);
-      if ((await askHidden('Repeat password: ')) !== password)
-        throw new UsageError('passwords do not match');
-    }
-    const problem = passwordProblem(password, name);
-    if (problem) throw new UsageError(problem);
-    const user = await new AuthService(store).createUser(name, password, role);
-    store.audit({
-      actor: 'cli',
-      action: 'user.create',
-      target: user.username,
-      outcome: 'success',
-      ip: null,
-      details: { role },
-    });
-    io.out(`Created ${role} "${user.username}".`);
-    return EXIT.OK;
-  } finally {
-    store.close();
-  }
-}
-
-export function usersListCommand(opts: { workspace?: string }, io: Output): number {
-  const store = openStore(opts.workspace);
-  try {
-    const users = store.listUsers();
-    if (users.length === 0) io.out('No users yet. Start "raion server" to create the first admin.');
-    for (const u of users)
-      io.out(`${u.username.padEnd(24)} ${u.role.padEnd(8)} ${u.disabled ? 'disabled' : 'active'}`);
-    return EXIT.OK;
-  } finally {
-    store.close();
-  }
+  format: 'text' | 'json' | undefined,
+): { io: Output; emit: Emit } {
+  if (format !== 'json') return { io, emit: () => undefined };
+  return {
+    io: { out: (t) => io.err(t), err: (t) => io.err(t) },
+    emit: (result) => io.out(JSON.stringify(result, null, 2)),
+  };
 }

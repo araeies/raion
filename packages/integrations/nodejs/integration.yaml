@@ -17,6 +17,13 @@ spec:
   languages: [nodejs]
 
   parameters:
+    injectAgent:
+      type: boolean
+      default: false
+      description: >-
+        Add the OpenTelemetry agent when the container starts, instead of installing packages in
+        the application: nothing in your image changes (Docker Compose only). The agent is
+        copied from Raion's pinned OpenTelemetry image into a shared volume.
     esmHook:
       type: boolean
       default: true
@@ -35,11 +42,14 @@ spec:
         "npm install @opentelemetry/api @opentelemetry/auto-instrumentations-node") and
         rebuild it. They contain the OpenTelemetry SDK and instrumentation for HTTP, Express,
         Fastify, Koa, databases, Redis, pino, winston and more.
+      when: { param: injectAgent, equals: false }
 
   instrumentation:
     env:
       NODE_OPTIONS:
         cases:
+          - when: { param: injectAgent, equals: true }
+            value: --require /otel-auto-instrumentation/autoinstrumentation.js
           - when: { param: esmHook, equals: true }
             value: >-
               --import=data:text/javascript,import{register}from'node:module';import{pathToFileURL}from'node:url';register('@opentelemetry/instrumentation/hook.mjs',pathToFileURL('./'));
@@ -56,6 +66,10 @@ spec:
       # Stable HTTP semantic conventions: http.server.request.duration in seconds.
       OTEL_SEMCONV_STABILITY_OPT_IN: http
       OTEL_NODE_RESOURCE_DETECTORS: env,host,os,process,serviceinstance
+    agent:
+      image: nodejs
+      path: /autoinstrumentation/.
+      when: { param: injectAgent, equals: true }
 
   capabilities:
     - id: http.server

@@ -23,11 +23,42 @@ const runtime = z.discriminatedUnion(
       composeService: name.optional(),
     }),
     z.strictObject({ type: z.literal('host') }),
+    /** Runs elsewhere (Kubernetes, the cloud, another server): watched from outside with checks. */
+    z.strictObject({ type: z.literal('remote') }),
   ],
   {
-    error: 'runtime.type must be "compose" (Docker Compose) or "host" (a process on this machine)',
+    error:
+      'runtime.type must be "compose" (Docker Compose), "host" (a process on this machine) or "remote" (elsewhere, watched with checks)',
   },
 );
+
+const boundedDuration = (min: number, max: number, range: string) =>
+  duration.refine(
+    (value) => {
+      const ms = parseDuration(value);
+      return ms !== undefined && ms >= min && ms <= max;
+    },
+    { message: `must be between ${range}` },
+  );
+
+/**
+ * An outside check: Raion visits the address like a user would and records whether it answers,
+ * how fast, with which status, and when its HTTPS certificate expires.
+ */
+export const serviceCheck = z.strictObject({
+  url: z
+    .url({
+      protocol: /^https?$/,
+      error: 'must be an http(s) address, e.g. https://shop.example.com/health',
+    })
+    .refine((value) => !value.includes('$'), { message: 'must not contain "$"' }),
+  /** HTTP status codes that count as healthy. Default: any 2xx. */
+  expectStatus: z.array(z.number().int().min(100).max(599)).min(1).max(20).optional(),
+  /** How often to check. */
+  interval: boundedDuration(15_000, 600_000, '15s and 10m').default('30s'),
+  /** How long to wait for an answer before the check counts as failed. */
+  timeout: boundedDuration(1_000, 60_000, '1s and 60s').default('10s'),
+});
 
 const integrationRef = z.union([
   name,
@@ -102,6 +133,8 @@ export const serviceSpec = z.strictObject({
   level: level.optional(),
   features: featureOverrides.optional(),
   integrations: z.array(integrationRef).default([]),
+  /** Outside checks of the service's address (required for runtime "remote"). */
+  checks: z.array(serviceCheck).max(10).default([]),
   signals: z
     .strictObject({
       metrics: z.boolean().default(true),
@@ -130,3 +163,4 @@ export type ServiceDocument = z.output<typeof serviceDocument>;
 export type InlineService = z.output<typeof inlineService>;
 export type Dependency = z.output<typeof dependency>;
 export type IntegrationRef = z.output<typeof integrationRef>;
+export type ServiceCheck = z.output<typeof serviceCheck>;

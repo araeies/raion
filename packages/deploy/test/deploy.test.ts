@@ -1,16 +1,18 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateRuntime, validateSources, type ResolvedWorkspace } from '@raion/core';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   acquireLock,
   ApplyError,
   computePlan,
   DockerComposeTarget,
   LockedError,
+  lockHolder,
+  OperationJournal,
   ReleaseStore,
   StatePaths,
   type ExecResult,
@@ -158,6 +160,118 @@ describe('workspace lock', () => {
       }),
     );
     acquireLock(path, 'alice', 'apply')();
+  });
+});
+
+describe('workspace lock over long operations', () => {
+  const holderFile = (extra: Record<string, unknown>) =>
+    JSON.stringify({
+      pid: 12345,
+      host: 'another-machine',
+      owner: 'ci',
+      operation: 'apply',
+      startedAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+      ...extra,
+    });
+
+  it('never takes over a lock whose holder is still refreshing it, however long it runs', async () => {
+    const path = join(dir, 'apply.lock');
+    await writeFile(path, holderFile({ heartbeatAt: new Date().toISOString() }));
+    expect(() => acquireLock(path, 'alice', 'apply')).toThrow(LockedError);
+    expect(lockHolder(path)?.owner).toBe('ci');
+  });
+
+  it('takes over a lock that stopped being refreshed', async () => {
+    const path = join(dir, 'apply.lock');
+    await writeFile(
+      path,
+      holderFile({ heartbeatAt: new Date(Date.now() - 10 * 60_000).toISOString() }),
+    );
+    expect(lockHolder(path)).toBeUndefined();
+    acquireLock(path, 'alice', 'apply')();
+  });
+
+  it('refreshes the lock while held', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'Date'] });
+    try {
+      const path = join(dir, 'apply.lock');
+      const release = acquireLock(path, 'alice', 'apply');
+      const before = JSON.parse(await readFile(path, 'utf8')) as { heartbeatAt: string };
+      vi.advanceTimersByTime(31_000);
+      const after = JSON.parse(await readFile(path, 'utf8')) as { heartbeatAt: string };
+      expect(Date.parse(after.heartbeatAt)).toBeGreaterThan(Date.parse(before.heartbeatAt));
+      release();
+      expect(lockHolder(path)).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('operation journal', () => {
+  it('records operations from any interface, newest first, with their outcome', async () => {
+    const journal = new OperationJournal(new StatePaths(dir));
+    const result = await journal.run(
+      { kind: 'apply', via: 'cli', actor: 'alice' },
+      async (log) => {
+        log('Starting components…');
+        return { release: '0001' };
+      },
+      (r) => r,
+    );
+    expect(result).toEqual({ release: '0001' });
+    await expect(
+      journal.run({ kind: 'verify', via: 'web', actor: 'bob' }, () =>
+        Promise.reject(new Error('traces did not arrive')),
+      ),
+    ).rejects.toThrow('traces did not arrive');
+    const [verify, apply] = journal.list();
+    expect(verify).toMatchObject({
+      kind: 'verify',
+      via: 'web',
+      state: 'failed',
+      error: 'traces did not arrive',
+    });
+    expect(apply).toMatchObject({
+      kind: 'apply',
+      via: 'cli',
+      actor: 'alice',
+      state: 'succeeded',
+      log: ['Starting components…'],
+      result: { release: '0001' },
+    });
+    expect(journal.get(apply!.id)?.finishedAt).toBeTruthy();
+    expect(journal.active()).toBeUndefined();
+  });
+
+  it('shows a running change to every process, and spots one whose process died', async () => {
+    const journal = new OperationJournal(new StatePaths(dir));
+    const handle = journal.begin({ kind: 'apply', via: 'web', actor: 'alice' });
+    // Another process (the CLI, say) reading the same folder sees it running.
+    expect(new OperationJournal(new StatePaths(dir)).active()?.id).toBe(handle.id);
+    handle.succeed();
+    expect(journal.active()).toBeUndefined();
+
+    const { hostname } = await import('node:os');
+    await mkdir(journal.dir, { recursive: true });
+    await writeFile(
+      join(journal.dir, '20260101T000000Z-abcdef.json'),
+      JSON.stringify({
+        id: '20260101T000000Z-abcdef',
+        kind: 'rollback',
+        via: 'cli',
+        actor: 'ghost',
+        host: hostname(),
+        pid: 999_999_999,
+        startedAt: new Date().toISOString(),
+        heartbeatAt: new Date().toISOString(),
+        state: 'running',
+        log: [],
+      }),
+    );
+    expect(journal.get('20260101T000000Z-abcdef')?.state).toBe('interrupted');
+    expect(journal.active()).toBeUndefined();
+    expect(journal.get('../../etc/passwd')).toBeUndefined();
   });
 });
 

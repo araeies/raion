@@ -17,18 +17,29 @@ import {
   ApplyError,
   checkDashboards,
   checkServiceTelemetry,
+  serviceHistory,
+  type HistorySeries,
   DockerComposeTarget,
   fetchActiveAlerts,
   formatPlan,
+  ConnectRunningError,
+  connectRunning,
+  discoverContainers,
+  dockerRunner,
   LockedError,
+  OperationJournal,
+  planConnectRunning,
+  type ConnectRunningPlan,
+  StatePaths,
   verifyPipeline,
+  type OperationKind,
   writeFiles,
   stateRoot,
   type DriftKind,
   type ToolCheck,
 } from '@raion/deploy';
 import { Store } from '@raion/server';
-import { EXIT, resolveWorkspaceDir, UsageError, type Output } from './commands.js';
+import { structured, EXIT, resolveWorkspaceDir, UsageError, type Output } from './commands.js';
 import { confirm } from './prompt.js';
 
 interface Loaded {
@@ -79,6 +90,39 @@ function audit(
   }
 }
 
+/**
+ * Runs a stack operation the way the web server does: recorded in the shared operation journal
+ * (so the web UI shows it while it runs), and refused while another change runs anywhere.
+ */
+async function recorded<T>(
+  dir: string,
+  kind: OperationKind,
+  io: Output,
+  work: (progress: (message: string) => void) => Promise<T>,
+  outcome?: (result: T) => unknown,
+): Promise<T> {
+  const journal = new OperationJournal(new StatePaths(dir));
+  const running = kind === 'verify' ? undefined : journal.active();
+  if (running) {
+    throw new LockedError({
+      pid: running.pid,
+      host: running.host,
+      owner: `${running.actor} (${running.via === 'cli' ? 'command line' : 'web UI'})`,
+      operation: running.kind,
+      startedAt: running.startedAt,
+    });
+  }
+  return journal.run(
+    { kind, via: 'cli', actor: actor() },
+    (log) =>
+      work((message) => {
+        io.out(message);
+        log(message);
+      }),
+    outcome,
+  );
+}
+
 function printToolChecks(checks: ToolCheck[], io: Output) {
   for (const c of checks) {
     io.out(`  ${c.ok ? '✓' : '✗'} ${c.tool}`);
@@ -96,9 +140,10 @@ function printToolChecks(checks: ToolCheck[], io: Output) {
 
 export async function renderCommand(
   dirArg: string | undefined,
-  opts: { out: string },
-  io: Output,
+  opts: { out: string; format?: 'text' | 'json' },
+  rawIo: Output,
 ): Promise<number> {
+  const { io, emit } = structured(rawIo, opts.format);
   const loaded = await load(dirArg, io);
   if (!loaded) return EXIT.INVALID;
   const out = resolve(opts.out);
@@ -107,6 +152,14 @@ export async function renderCommand(
   }
   mkdirSync(out, { recursive: true });
   writeFiles(out, loaded.bundle.artifacts);
+  emit({
+    directory: out,
+    files: loaded.bundle.artifacts.map(({ path, component, description }) => ({
+      path,
+      component,
+      description,
+    })),
+  });
   io.out(`Wrote ${loaded.bundle.artifacts.length} files to ${out}:`);
   for (const a of loaded.bundle.artifacts) io.out(`  ${a.path.padEnd(48)} ${a.description}`);
   io.out(
@@ -121,7 +174,7 @@ export async function deepValidateCommand(dirArg: string | undefined, io: Output
   const loaded = await load(dirArg, io);
   if (!loaded) return EXIT.INVALID;
   io.out('Checking generated configuration with each component’s own validator…');
-  const checks = await loaded.target.validate(loaded.bundle);
+  const checks = await loaded.target.validate(loaded.bundle, (m) => io.out(m));
   printToolChecks(checks, io);
   return checks.every((c) => c.ok) ? EXIT.OK : EXIT.INVALID;
 }
@@ -130,19 +183,21 @@ export async function deepValidateCommand(dirArg: string | undefined, io: Output
 
 export async function planCommand(
   dirArg: string | undefined,
-  opts: { toolValidation: boolean; detailedExitcode?: boolean },
-  io: Output,
+  opts: { toolValidation: boolean; detailedExitcode?: boolean; format?: 'text' | 'json' },
+  rawIo: Output,
 ): Promise<number> {
+  const { io, emit } = structured(rawIo, opts.format);
   const loaded = await load(dirArg, io);
   if (!loaded) return EXIT.INVALID;
   const plan = loaded.target.plan(loaded.bundle);
   io.out(formatPlan(plan));
   if (opts.toolValidation) {
     io.out('\nValidating generated configuration with each component’s own tools…');
-    const checks = await loaded.target.validate(loaded.bundle);
+    const checks = await loaded.target.validate(loaded.bundle, (m) => io.out(m));
     printToolChecks(checks, io);
+    emit({ plan, toolChecks: checks });
     if (checks.some((c) => !c.ok)) return EXIT.INVALID;
-  }
+  } else emit({ plan });
   // --detailed-exitcode: 0 = no changes, 3 = changes pending (for CI drift detection).
   return opts.detailedExitcode && !plan.noChanges ? 3 : EXIT.OK;
 }
@@ -156,10 +211,12 @@ export async function applyCommand(
     allowPrivileged?: boolean;
     allowDataChanges?: boolean;
     skipToolValidation?: boolean;
+    format?: 'text' | 'json';
   },
-  io: Output,
+  rawIo: Output,
   interactive: boolean,
 ): Promise<number> {
+  const { io, emit } = structured(rawIo, opts.format);
   const loaded = await load(dirArg, io);
   if (!loaded) return EXIT.INVALID;
   const plan = loaded.target.plan(loaded.bundle);
@@ -174,16 +231,24 @@ export async function applyCommand(
     }
   }
   try {
-    const result = await loaded.target.apply(loaded.bundle, {
-      actor: actor(),
-      ...(opts.allowPrivileged ? { allowPrivileged: true } : {}),
-      ...(opts.allowDataChanges ? { allowDataChanges: true } : {}),
-      ...(opts.skipToolValidation ? { skipToolValidation: true } : {}),
-      onProgress: (m) => io.out(m),
-    });
+    const result = await recorded(
+      loaded.dir,
+      'apply',
+      io,
+      (progress) =>
+        loaded.target.apply(loaded.bundle, {
+          actor: actor(),
+          ...(opts.allowPrivileged ? { allowPrivileged: true } : {}),
+          ...(opts.allowDataChanges ? { allowDataChanges: true } : {}),
+          ...(opts.skipToolValidation ? { skipToolValidation: true } : {}),
+          onProgress: progress,
+        }),
+      (r) => ({ release: r.release.id, restarted: r.restarted }),
+    );
     audit(loaded.dir, 'runtime.apply', 'success', result.release.id, {
       restarted: result.restarted,
     });
+    emit({ ok: true, release: result.release.id, restarted: result.restarted, plan: result.plan });
     io.out(`\n✓ Release ${result.release.id} is deployed and every component is ready.`);
     io.out(
       `  Grafana: ${loaded.workspace.server.publicUrl.replace(/\/$/, '')}/grafana/ (sign in through "raion server")`,
@@ -195,10 +260,12 @@ export async function applyCommand(
     return EXIT.OK;
   } catch (error) {
     if (error instanceof LockedError) {
+      emit({ ok: false, error: error.message, busy: true });
       io.err(`✗ ${error.message}`);
       return EXIT.USAGE;
     }
     if (error instanceof ApplyError) {
+      emit({ ok: false, error: error.message, ...error.details });
       audit(loaded.dir, 'runtime.apply', 'failure', null, {
         error: error.message,
         rolledBackTo: error.details.rolledBackTo ?? null,
@@ -282,10 +349,11 @@ export async function statusCommand(
 
 export async function rollbackCommand(
   dirArg: string | undefined,
-  opts: { to?: string; yes?: boolean },
-  io: Output,
+  opts: { to?: string; yes?: boolean; format?: 'text' | 'json' },
+  rawIo: Output,
   interactive: boolean,
 ): Promise<number> {
+  const { io, emit } = structured(rawIo, opts.format);
   const loaded = await load(dirArg, io);
   if (!loaded) return EXIT.INVALID;
   const releases = loaded.target.releases.list();
@@ -299,12 +367,20 @@ export async function rollbackCommand(
     if (!(await confirm(`Roll back to ${opts.to ?? 'the previous release'}?`))) return EXIT.OK;
   }
   try {
-    const target = await loaded.target.rollback({
-      actor: actor(),
-      ...(opts.to ? { to: opts.to } : {}),
-      onProgress: (m) => io.out(m),
-    });
+    const target = await recorded(
+      loaded.dir,
+      'rollback',
+      io,
+      (progress) =>
+        loaded.target.rollback({
+          actor: actor(),
+          ...(opts.to ? { to: opts.to } : {}),
+          onProgress: progress,
+        }),
+      (r) => ({ release: r.id }),
+    );
     audit(loaded.dir, 'runtime.rollback', 'success', target.id, null);
+    emit({ ok: true, release: target.id });
     io.out(
       `✓ Release ${target.id} is deployed. Note: your workspace files still describe the newer configuration; "raion plan" will show the difference.`,
     );
@@ -312,6 +388,7 @@ export async function rollbackCommand(
   } catch (error) {
     if (error instanceof ApplyError || error instanceof LockedError) {
       audit(loaded.dir, 'runtime.rollback', 'failure', opts.to ?? null, { error: error.message });
+      emit({ ok: false, error: error.message });
       io.err(`✗ ${error.message}`);
       return EXIT.INVALID;
     }
@@ -373,7 +450,13 @@ export async function driftCommand(
     }
   }
   try {
-    const release = await loaded.target.repair({ actor: actor(), onProgress: (m) => io.out(m) });
+    const release = await recorded(
+      loaded.dir,
+      'repair',
+      io,
+      (progress) => loaded.target.repair({ actor: actor(), onProgress: progress }),
+      (r) => ({ release: r.id }),
+    );
     audit(loaded.dir, 'runtime.repair', 'success', release.id, {
       drift: report.items.map((i) => `${i.kind}:${i.subject}`),
     });
@@ -400,10 +483,11 @@ export async function driftCommand(
 
 export async function destroyCommand(
   dirArg: string | undefined,
-  opts: { deleteData?: boolean; yes?: boolean },
-  io: Output,
+  opts: { deleteData?: boolean; yes?: boolean; format?: 'text' | 'json' },
+  rawIo: Output,
   interactive: boolean,
 ): Promise<number> {
+  const { io, emit } = structured(rawIo, opts.format);
   const loaded = await load(dirArg, io);
   if (!loaded) return EXIT.INVALID;
   io.out(
@@ -417,8 +501,11 @@ export async function destroyCommand(
     if (!(await confirm('Continue?'))) return EXIT.OK;
   }
   try {
-    await loaded.target.destroy({ actor: actor(), deleteData: Boolean(opts.deleteData) });
+    await recorded(loaded.dir, 'destroy', io, () =>
+      loaded.target.destroy({ actor: actor(), deleteData: Boolean(opts.deleteData) }),
+    );
     audit(loaded.dir, 'runtime.destroy', 'success', null, { deleteData: Boolean(opts.deleteData) });
+    emit({ ok: true, deleteData: Boolean(opts.deleteData) });
     io.out('✓ The observability stack was stopped.');
     return EXIT.OK;
   } catch (error) {
@@ -434,9 +521,10 @@ export async function destroyCommand(
 
 export async function verifyCommand(
   dirArg: string | undefined,
-  opts: { service?: string; dashboards?: boolean },
-  io: Output,
+  opts: { service?: string; dashboards?: boolean; format?: 'text' | 'json' },
+  rawIo: Output,
 ): Promise<number> {
+  const { io, emit } = structured(rawIo, opts.format);
   const loaded = await load(dirArg, io);
   if (!loaded) return EXIT.INVALID;
   if (!loaded.target.releases.currentId()) {
@@ -451,19 +539,23 @@ export async function verifyCommand(
       (traces ? ' and trace' : '') +
       ' through the collector, exactly like an application would…',
   );
-  const results = await verifyPipeline(
-    loaded.target.gateway(),
-    loaded.workspace.target.compose.otlpHttpPort,
-    {
-      traces,
-      environment: loaded.workspace.environment,
-    },
+  const results = await recorded(
+    loaded.dir,
+    'verify',
+    io,
+    () =>
+      verifyPipeline(loaded.target.gateway(), loaded.workspace.target.compose.otlpHttpPort, {
+        traces,
+        environment: loaded.workspace.environment,
+      }),
+    (r) => r.map(({ signal, ok }) => ({ signal, ok })),
   );
   for (const r of results) {
     io.out(`  ${r.ok ? '✓' : '✗'} ${r.signal.padEnd(8)} ${r.message}`);
     if (r.query) io.out(`             query: ${r.query}`);
   }
   const ok = results.every((r) => r.ok);
+  emit({ ok, results });
   io.out(
     ok
       ? '\nThe telemetry pipeline works end to end.'
@@ -503,6 +595,74 @@ async function verifyService(loaded: Loaded, name: string, io: Output): Promise<
       : `\nService "${name}" is not fully connected. Run "raion connect --service ${name}" for the setup steps.`,
   );
   return ok ? EXIT.OK : EXIT.INVALID;
+}
+
+// ----- history -------------------------------------------------------------------------------
+
+const PERIODS = { '1h': 60, '6h': 360, '24h': 1440 } as const;
+const BARS = '▁▂▃▄▅▆▇█';
+
+function human(unit: HistorySeries['unit'], v: number): string {
+  if (unit === 'ratio') return `${(v * 100).toFixed(v > 0 && v < 0.01 ? 2 : 1)}%`;
+  if (unit === 'seconds') return v < 1 ? `${Math.round(v * 1000)} ms` : `${v.toFixed(2)} s`;
+  return `${v < 10 ? v.toFixed(2) : Math.round(v)}/s`;
+}
+
+/** A terminal sparkline: one character per bucket, a space where nothing arrived. */
+export function sparkline(
+  points: [number, number][],
+  from: number,
+  to: number,
+  width = 48,
+): string {
+  if (points.length === 0) return ' '.repeat(width);
+  const buckets: (number | null)[] = Array.from({ length: width }, () => null);
+  for (const [t, v] of points) {
+    const i = Math.min(width - 1, Math.floor(((t - from) / Math.max(1, to - from)) * width));
+    buckets[i] = Math.max(buckets[i] ?? -Infinity, v);
+  }
+  const max = Math.max(...points.map(([, v]) => v));
+  return buckets
+    .map((v) => (v === null ? ' ' : BARS[max <= 0 ? 0 : Math.round((v / max) * (BARS.length - 1))]))
+    .join('');
+}
+
+/** raion history: how one application behaved recently, like the charts on its page. */
+export async function historyCommand(
+  service: string,
+  dirArg: string | undefined,
+  opts: { period: keyof typeof PERIODS; format?: 'text' | 'json' },
+  rawIo: Output,
+): Promise<number> {
+  const { io, emit } = structured(rawIo, opts.format);
+  const loaded = await load(dirArg, io);
+  if (!loaded) return EXIT.INVALID;
+  const svc = loaded.workspace.services.find((s) => s.name === service);
+  if (!svc) throw new UsageError(`no service "${service}" in this workspace`);
+  if (!loaded.target.releases.currentId()) {
+    io.err('Nothing is deployed yet. Run "raion apply" first.');
+    return EXIT.INVALID;
+  }
+  const h = await serviceHistory(loaded.target.gateway(), svc, PERIODS[opts.period]);
+  emit({ ...h });
+  if (h.series.length === 0) {
+    io.out(
+      `Raion has no measurements for ${service}: it neither serves HTTP nor has outside checks.`,
+    );
+    return EXIT.OK;
+  }
+  const at = (t: number) =>
+    new Date(t * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  io.out(`${service}, the last ${opts.period} (${at(h.from)} to ${at(h.to)}):
+`);
+  for (const s of h.series) {
+    const values = s.points.map(([, v]) => v);
+    const summary = values.length
+      ? `now ${human(s.unit, values.at(-1)!)}, lowest ${human(s.unit, Math.min(...values))}, highest ${human(s.unit, Math.max(...values))}`
+      : 'nothing arrived';
+    io.out(`  ${s.label.padEnd(22)} ${sparkline(s.points, h.from, h.to)}  ${summary}`);
+  }
+  return EXIT.OK;
 }
 
 // ----- connect -------------------------------------------------------------------------------
@@ -631,4 +791,101 @@ async function verifyDashboards(loaded: Loaded, io: Output): Promise<number> {
       : '\nSome panels have no data. If your services were just connected, wait a few minutes; otherwise run "raion verify --service <name>".',
   );
   return result.ok ? EXIT.OK : EXIT.INVALID;
+}
+
+// ----- discover and connect running applications --------------------------------------------
+
+/** raion discover: what runs on this machine, and which of it Raion already monitors. */
+export async function discoverCommand(
+  dirArg: string | undefined,
+  opts: { format: 'text' | 'json' },
+  io: Output,
+): Promise<number> {
+  const loaded = await load(dirArg, io);
+  if (!loaded) return EXIT.INVALID;
+  const ws = loaded.workspace;
+  const containers = await discoverContainers(dockerRunner, {
+    excludeProjects: [ws.target.compose.projectName],
+  });
+  const monitoredAs = (service?: string) =>
+    ws.services.find(
+      (s) => s.runtime.type === 'compose' && (s.runtime.composeService ?? s.name) === service,
+    )?.name ?? null;
+  const rows = containers.map((c) => ({ ...c, monitoredAs: monitoredAs(c.compose?.service) }));
+  if (opts.format === 'json') {
+    io.out(JSON.stringify({ containers: rows }, null, 2));
+    return EXIT.OK;
+  }
+  if (rows.length === 0) {
+    io.out('No containers are running on this machine.');
+    return EXIT.OK;
+  }
+  for (const c of rows) {
+    const what = c.guess.integration ?? c.guess.language ?? 'unknown';
+    const where = c.compose
+      ? `${c.compose.project}/${c.compose.service}`
+      : `${c.container} (docker run)`;
+    io.out(
+      `${c.monitoredAs ? '✓' : ' '} ${where.padEnd(36)} ${what.padEnd(11)} ${c.monitoredAs ? `monitored as ${c.monitoredAs}` : c.compose ? 'not monitored: raion services add' : 'not monitored'}`,
+    );
+  }
+  return EXIT.OK;
+}
+
+/** raion connect --restart: restarts a running application with Raion's settings. */
+export async function connectRestartCommand(
+  dirArg: string | undefined,
+  service: string,
+  opts: { yes?: boolean },
+  io: Output,
+  interactive: boolean,
+): Promise<number> {
+  const loaded = await load(dirArg, io);
+  if (!loaded) return EXIT.INVALID;
+  let plan: ConnectRunningPlan;
+  try {
+    plan = await planConnectRunning(dockerRunner, loaded.workspace, loaded.dir, service);
+  } catch (error) {
+    if (error instanceof ConnectRunningError) {
+      io.err(`✗ ${error.message}`);
+      return EXIT.INVALID;
+    }
+    throw error;
+  }
+  io.out(
+    `Raion will restart ${service} in the Compose project ${plan.target.project} with its settings:`,
+  );
+  io.out(`  ${plan.connection.env.map(([k]) => k).join(', ')}`);
+  if (plan.connection.agent)
+    io.out(`  and the OpenTelemetry ${plan.connection.agent.name} agent, copied in when it starts`);
+  io.out(`Your compose files are not changed. Raion keeps its settings in ${plan.overridePath}.`);
+  io.out(`If you restart it yourself later, use:\n  docker ${plan.command.join(' ')}\n`);
+  if (!opts.yes) {
+    if (!interactive)
+      throw new UsageError('refusing to restart without confirmation; pass --yes in scripts');
+    if (!(await confirm(`Restart ${service} now?`))) return EXIT.OK;
+  }
+  try {
+    await recorded(loaded.dir, 'connect', io, (progress) =>
+      connectRunning(
+        dockerRunner,
+        new StatePaths(loaded.dir),
+        plan.target,
+        plan.composeService,
+        plan.override,
+        progress,
+        { network: plan.network },
+      ),
+    );
+    audit(loaded.dir, 'service.connect', 'success', service, { project: plan.target.project });
+    io.out(`✓ ${service} is connected. Check what arrives with: raion verify --service ${service}`);
+    return EXIT.OK;
+  } catch (error) {
+    if (error instanceof ConnectRunningError || error instanceof LockedError) {
+      audit(loaded.dir, 'service.connect', 'failure', service, { error: error.message });
+      io.err(`✗ ${error.message}`);
+      return EXIT.INVALID;
+    }
+    throw error;
+  }
 }

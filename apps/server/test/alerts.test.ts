@@ -49,6 +49,9 @@ let store: Store;
 let inbox: AlertInbox;
 let am: Server;
 let amAlerts: ActiveAlert[] | 'down';
+/** What the fake Prometheus reports: rule alerts (pending or firing) and the ALERTS history. */
+let promRules: { name: string; state: string; labels: Record<string, string>; activeAt: string }[];
+let promHistory: { metric: Record<string, string>; values: [number, string][] }[] | 'down';
 const amRequests: { method: string; url: string; body: string }[] = [];
 let cookies: Record<string, string>;
 
@@ -56,6 +59,8 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'raion-alerts-'));
   await writeWorkspace(dir, renderWorkspace({ name: 'acme', level: 1, environment: 'production' }));
   amAlerts = [];
+  promRules = [];
+  promHistory = [];
   amRequests.length = 0;
   am = createServer((req, res) => {
     let body = '';
@@ -72,6 +77,35 @@ beforeEach(async () => {
         res.end(JSON.stringify({ silenceID: 'c3a6c6ad-0000-4000-8000-000000000001' }));
       } else if (req.url === '/alertmanager/api/v2/silences') {
         res.end('[]');
+      } else if (req.url?.startsWith('/prometheus/api/v1/rules')) {
+        res.end(
+          JSON.stringify({
+            data: {
+              groups: [
+                {
+                  rules: promRules.map((r) => ({
+                    type: 'alerting',
+                    name: r.name,
+                    alerts: [
+                      {
+                        labels: { alertname: r.name, ...r.labels },
+                        annotations: {},
+                        state: r.state,
+                        activeAt: r.activeAt,
+                        value: '1',
+                      },
+                    ],
+                  })),
+                },
+              ],
+            },
+          }),
+        );
+      } else if (req.url?.startsWith('/prometheus/api/v1/query_range')) {
+        if (promHistory === 'down') {
+          res.statusCode = 503;
+          res.end('{}');
+        } else res.end(JSON.stringify({ data: { result: promHistory } }));
       } else {
         res.end('{}');
       }
@@ -239,5 +273,141 @@ describe('secrets API', () => {
     expect(
       (await send('PUT', '/api/v1/secrets/gateway-token', 'admin', { value: 'x' })).statusCode,
     ).toBe(400);
+  });
+});
+
+describe('one alert experience', () => {
+  /** Samples every 30 s, as Prometheus would return them, from `from` to `to` (Date). */
+  const samples = (from: Date, to: Date): [number, string][] => {
+    const out: [number, string][] = [];
+    for (let t = Math.ceil(from.getTime() / 30_000) * 30; t <= to.getTime() / 1000; t += 30) {
+      out.push([t, '1']);
+    }
+    return out;
+  };
+
+  it('explains each alert and shows the self-test instead of hiding it', async () => {
+    amAlerts = [alert('Watchdog'), alert('HostHighCpu', {}, { severity: 'warning' })];
+    await inbox.poll();
+    const body = (await send('GET', '/api/v1/alerts', 'viewer')).json<{
+      selfTest: { firing: boolean; rule: { title: string; meaning: string } };
+      firing: { alertname: string; rule: { title: string; condition: string; action: string[] } }[];
+    }>();
+    expect(body.selfTest.firing).toBe(true);
+    expect(body.selfTest.rule.title).toBe('Alerting self-test');
+    expect(body.selfTest.rule.meaning).toMatch(/fire all the time/);
+    expect(body.firing).toHaveLength(1);
+    expect(body.firing[0]!.rule.title).toBe('The processor is overloaded');
+    expect(body.firing[0]!.rule.condition).toMatch(/90%/);
+    expect(body.firing[0]!.rule.action.length).toBeGreaterThan(0);
+  });
+
+  it('shows alerts that are about to fire', async () => {
+    amAlerts = [alert('Watchdog')];
+    promRules = [
+      {
+        name: 'HostHighCpu',
+        state: 'pending',
+        labels: { severity: 'warning' },
+        activeAt: '2026-10-07T10:00:00Z',
+      },
+      { name: 'HostMemoryPressure', state: 'firing', labels: {}, activeAt: '2026-10-07T09:00:00Z' },
+    ];
+    await inbox.poll();
+    const body = (await send('GET', '/api/v1/alerts', 'viewer')).json<{
+      pending: { alertname: string; activeAt: string; rule: { title: string } }[];
+    }>();
+    expect(body.pending.map((a) => a.alertname)).toEqual(['HostHighCpu']);
+    expect(body.pending[0]!.activeAt).toBe('2026-10-07T10:00:00Z');
+    expect(body.pending[0]!.rule.title).toBe('The processor is overloaded');
+  });
+
+  it('recovers alerts that fired and cleared while Raion was not running', async () => {
+    const now = Date.now();
+    store.setSetting('inbox.lastPollAt', new Date(now - 3 * 3_600_000).toISOString());
+    amAlerts = [alert('Watchdog'), alert('HostMemoryPressure')];
+    promHistory = [
+      {
+        metric: {
+          __name__: 'ALERTS',
+          alertname: 'HostDiskAlmostFull',
+          alertstate: 'firing',
+          severity: 'critical',
+          device: '/dev/sda1',
+        },
+        values: samples(new Date(now - 2 * 3_600_000), new Date(now - 3_600_000)),
+      },
+      // Still firing: Alertmanager reports it, with its annotations.
+      {
+        metric: { __name__: 'ALERTS', alertname: 'HostMemoryPressure', alertstate: 'firing' },
+        values: samples(new Date(now - 600_000), new Date(now)),
+      },
+    ];
+    await inbox.poll();
+    const body = (await send('GET', '/api/v1/alerts', 'viewer')).json<{
+      firing: { alertname: string; source: string }[];
+      resolved: {
+        alertname: string;
+        source: string;
+        startsAt: string;
+        resolvedAt: string;
+        labels: Record<string, string>;
+      }[];
+    }>();
+    expect(body.firing.map((a) => [a.alertname, a.source])).toEqual([
+      ['HostMemoryPressure', 'alertmanager'],
+    ]);
+    expect(body.resolved).toHaveLength(1);
+    const recovered = body.resolved[0]!;
+    expect(recovered).toMatchObject({
+      alertname: 'HostDiskAlmostFull',
+      source: 'prometheus-history',
+    });
+    expect(recovered.labels.device).toBe('/dev/sda1');
+    expect(Math.abs(Date.parse(recovered.startsAt) - (now - 2 * 3_600_000))).toBeLessThan(60_000);
+    expect(Math.abs(Date.parse(recovered.resolvedAt) - (now - 3_600_000))).toBeLessThan(60_000);
+
+    // A later restart does not record it twice.
+    const again = new AlertInbox(store, (inbox as unknown as { runtime: RuntimeService }).runtime);
+    store.setSetting('inbox.lastPollAt', new Date(now - 3 * 3_600_000).toISOString());
+    await again.poll();
+    expect(store.listAlerts({ open: false, limit: 10 })).toHaveLength(1);
+  });
+
+  it('gives an alert that was open when Raion stopped its real end time', async () => {
+    const now = Date.now();
+    amAlerts = [
+      alert('Watchdog'),
+      alert('HostHighCpu', { startsAt: new Date(now - 4 * 3_600_000).toISOString() }),
+    ];
+    await inbox.poll();
+    // Raion stops; the alert clears 90 minutes ago; Raion starts again.
+    store.setSetting('inbox.lastPollAt', new Date(now - 3 * 3_600_000).toISOString());
+    amAlerts = [alert('Watchdog')];
+    promHistory = [
+      {
+        metric: { __name__: 'ALERTS', alertname: 'HostHighCpu', alertstate: 'firing' },
+        values: samples(new Date(now - 3 * 3_600_000), new Date(now - 90 * 60_000)),
+      },
+    ];
+    const restarted = new AlertInbox(
+      store,
+      (inbox as unknown as { runtime: RuntimeService }).runtime,
+    );
+    await restarted.poll();
+    const [resolved] = store.listAlerts({ open: false, limit: 10 });
+    expect(resolved).toMatchObject({ alertname: 'HostHighCpu', source: 'alertmanager' });
+    expect(Math.abs(Date.parse(resolved!.resolvedAt!) - (now - 90 * 60_000))).toBeLessThan(60_000);
+  });
+
+  it('keeps live alerts working when the history cannot be read', async () => {
+    store.setSetting('inbox.lastPollAt', new Date(Date.now() - 3 * 3_600_000).toISOString());
+    promHistory = 'down';
+    amAlerts = [alert('Watchdog'), alert('HostHighCpu')];
+    await inbox.poll();
+    expect(inbox.health()).toMatchObject({ ok: true });
+    expect(store.listAlerts({ open: true, limit: 10 }).map((a) => a.alertname)).toEqual([
+      'HostHighCpu',
+    ]);
   });
 });

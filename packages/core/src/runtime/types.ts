@@ -41,16 +41,29 @@ export interface RuntimeBundle {
   /** Secrets the runtime reads from the secret store (receiver credentials). */
   secrets: { key: string; source: 'secret' | 'env'; file: string; composeName: string }[];
   /** Generated alert rules, by group (also present as artifacts). */
-  alerts: {
-    group: string;
-    alert: string;
-    severity: string;
-    service?: string;
-    for?: string;
-    summary: string;
-  }[];
+  alerts: GeneratedAlert[];
   /** Generated Grafana dashboards (also present as artifacts). */
   dashboards: { uid: string; title: string; service?: string }[];
+}
+
+/** An alert rule Raion generated, with the explanation shown to people. */
+export interface GeneratedAlert {
+  group: string;
+  alert: string;
+  severity: string;
+  /** What the alert is about: a service, an SLO, the host, or Raion's own stack. */
+  scope: 'service' | 'slo' | 'infrastructure' | 'platform';
+  service?: string;
+  slo?: string;
+  for?: string;
+  summary: string;
+  description: string;
+  /** The PromQL condition, for people who want the technical detail. */
+  expr: string;
+  title: string;
+  meaning: string;
+  condition: string;
+  action: string[];
 }
 
 /** Secret files the runtime expects. Their values never appear in artifacts. */

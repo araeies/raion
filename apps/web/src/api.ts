@@ -65,6 +65,15 @@ export interface ServiceDetail {
     level: number;
     features: Record<string, boolean>;
     signals: { metrics: boolean; logs: boolean; traces: boolean };
+    containerLogs: boolean;
+    checks: { url: string; expectStatus?: number[]; interval: string; timeout: string }[];
+    alerts: {
+      enabled: boolean;
+      errorRatePercent: number;
+      latencyP95Ms: number;
+      for: string;
+      missingTelemetry: boolean;
+    };
     dependencies: ({ service: string } | { external: { name: string; kind: string } })[];
     slos: Slo[];
     runbooks: { slo?: string; alert?: string; url: string }[];
@@ -83,6 +92,13 @@ export interface WorkspaceSummary {
     level: number;
     environment: string;
     serviceCount: number;
+    infrastructure: { host: boolean; containers: boolean };
+    teams: { name: string; route?: string; contacts?: string[] }[];
+    receivers: { name: string; type: 'slack' | 'email' | 'webhook' }[];
+    defaultReceiver: string | null;
+    retention: { metrics: string; logs: string; traces: string };
+    publicUrl: string;
+    sso: { displayName: string } | null;
   } | null;
 }
 
@@ -206,15 +222,22 @@ export interface RuntimeOverview {
   drift: { release?: string; items: { kind: string; subject: string; detail: string }[] };
 }
 
+/** A long-running operation on the stack, started from the web UI, the API or the CLI. */
 export interface Job {
   id: string;
-  kind: 'apply' | 'verify' | 'repair';
-  startedBy: string;
+  kind: 'apply' | 'rollback' | 'repair' | 'destroy' | 'verify' | 'connect';
+  via: 'cli' | 'web' | 'api';
+  actor: string;
   startedAt: string;
-  state: 'running' | 'succeeded' | 'failed';
+  finishedAt?: string;
+  /** "interrupted": its process stopped before it finished. */
+  state: 'running' | 'succeeded' | 'failed' | 'interrupted';
   log: string[];
   error?: string;
+  result?: unknown;
 }
+
+export type JobSummary = Omit<Job, 'log'>;
 
 export const runtimeApi = {
   overview: () => call<RuntimeOverview>('GET', '/api/v1/runtime'),
@@ -227,13 +250,28 @@ export const runtimeApi = {
     call<{ job: string }>('POST', '/api/v1/runtime/apply', approvals),
   verify: () => call<{ job: string }>('POST', '/api/v1/runtime/verify', {}),
   repair: () => call<{ job: string }>('POST', '/api/v1/runtime/repair', {}),
+  rollback: (to?: string) =>
+    call<{ job: string }>('POST', '/api/v1/runtime/rollback', to ? { to } : {}),
+  stop: (deleteData: boolean, confirm?: string) =>
+    call<{ job: string }>('POST', '/api/v1/runtime/stop', {
+      deleteData,
+      ...(confirm ? { confirm } : {}),
+    }),
   job: (id: string) => call<Job>('GET', `/api/v1/runtime/jobs/${encodeURIComponent(id)}`),
+  jobs: () => call<{ jobs: JobSummary[] }>('GET', '/api/v1/runtime/jobs'),
 };
 
 export interface ServiceTelemetry {
   service: string;
   signals: { signal: 'metrics' | 'logs' | 'traces'; ok: boolean; message: string; query: string }[];
   correlation?: { logsWithTraceId: number; linkedTraceFound: boolean; message: string };
+  checks?: {
+    url: string;
+    up: boolean | null;
+    seconds: number | null;
+    status: number | null;
+    certificateDays: number | null;
+  }[];
   red?: {
     requestsPerSecond: number | null;
     errorRatio: number | null;
@@ -259,7 +297,27 @@ export interface ServiceConnection {
   notes: string[];
 }
 
+/** One line of a chart: [unix seconds, value] points. */
+export interface HistorySeries {
+  key: 'requests' | 'errors' | 'p95' | 'up' | 'answer';
+  label: string;
+  unit: 'perSecond' | 'ratio' | 'seconds';
+  points: [number, number][];
+}
+
+export interface ServiceHistory {
+  from: number;
+  to: number;
+  step: number;
+  series: HistorySeries[];
+}
+
 export const servicesApi = {
+  history: (name: string, minutes: 60 | 360 | 1440) =>
+    call<{ deployed: boolean; history: ServiceHistory | null }>(
+      'GET',
+      `/api/v1/services/${encodeURIComponent(name)}/history?minutes=${minutes}`,
+    ),
   telemetry: (name: string) =>
     call<{ deployed: boolean; telemetry: ServiceTelemetry | null }>(
       'GET',
@@ -284,6 +342,36 @@ export interface AlertRecord {
   lastSeen: string;
   resolvedAt: string | null;
   state: string;
+  /** "prometheus-history": recovered for a time the Raion server was not running. */
+  source: 'alertmanager' | 'prometheus-history';
+  rule: AlertRule | null;
+}
+
+/** An alert rule Raion generated, explained in plain words. */
+export interface AlertRule {
+  group: string;
+  alert: string;
+  severity: string;
+  scope: 'service' | 'slo' | 'infrastructure' | 'platform';
+  service?: string;
+  slo?: string;
+  for?: string;
+  summary: string;
+  description: string;
+  expr: string;
+  title: string;
+  meaning: string;
+  condition: string;
+  action: string[];
+}
+
+/** An alert whose condition is true but has not lasted long enough to fire. */
+export interface PendingAlert {
+  alertname: string;
+  labels: Record<string, string>;
+  activeAt: string;
+  value: string;
+  rule: AlertRule | null;
 }
 
 export interface AlertsOverview {
@@ -294,16 +382,11 @@ export interface AlertsOverview {
     ok: boolean;
     message: string;
   } | null;
+  selfTest: { firing: boolean; rule: AlertRule | null };
   firing: AlertRecord[];
+  pending: PendingAlert[];
   resolved: AlertRecord[];
-  rules: {
-    group: string;
-    alert: string;
-    severity: string;
-    service?: string;
-    for?: string;
-    summary: string;
-  }[];
+  rules: AlertRule[];
 }
 
 export interface Silence {
@@ -334,6 +417,8 @@ export const alertsApi = {
     }>('GET', '/api/v1/secrets'),
   setSecret: (key: string, value: string) =>
     call<undefined>('PUT', `/api/v1/secrets/${encodeURIComponent(key)}`, { value }),
+  removeSecret: (key: string) =>
+    call<undefined>('DELETE', `/api/v1/secrets/${encodeURIComponent(key)}`),
 };
 
 export interface SloStatusView {
@@ -474,4 +559,84 @@ export const tokensApi = {
       expiresInDays,
     }),
   revoke: (id: string) => call<undefined>('DELETE', `/api/v1/tokens/${encodeURIComponent(id)}`),
+};
+
+/** A change to the workspace files, as the server computed it. */
+export interface WorkspaceEditView {
+  summary: string;
+  changes: { path: string; kind: 'add' | 'modify' | 'remove'; diff: string }[];
+  warnings: Diagnostic[];
+  written?: string[];
+}
+
+/** Edits the workspace files through the same engine as the CLI ("raion services set" etc.). */
+export type EditAction =
+  | { kind: 'service.add'; service: { name: string; type: string } & Record<string, unknown> }
+  | { kind: 'service.update'; name: string; set: Record<string, unknown> }
+  | { kind: 'service.remove'; name: string }
+  | {
+      kind: 'slo.add';
+      slo: { service: string; name: string; target: number; window: string } & Record<
+        string,
+        unknown
+      >;
+    }
+  | { kind: 'slo.update'; service: string; name: string; set: Record<string, unknown> }
+  | { kind: 'slo.remove'; service: string; name: string }
+  | { kind: 'workspace.update'; set: Record<string, unknown> }
+  | { kind: 'receiver.add'; receiver: Record<string, unknown> }
+  | { kind: 'receiver.update'; name: string; receiver: Record<string, unknown> }
+  | { kind: 'receiver.remove'; name: string }
+  | { kind: 'team.add'; team: { name: string } & Record<string, unknown> }
+  | { kind: 'team.update'; name: string; set: Record<string, unknown> }
+  | { kind: 'team.remove'; name: string };
+
+export const editApi = {
+  preview: (action: EditAction) =>
+    call<WorkspaceEditView>('POST', '/api/v1/workspace/edits/preview', { action }),
+  save: (action: EditAction) =>
+    call<WorkspaceEditView>('POST', '/api/v1/workspace/edits', { action }),
+};
+
+/** A container running on this machine, as Raion found it. */
+export interface DiscoveredContainer {
+  container: string;
+  image: string;
+  state: string;
+  compose?: { project: string; service: string; configFiles: string[]; workingDir: string };
+  guess: {
+    language?: 'nodejs' | 'python' | 'java' | 'go' | 'dotnet' | 'php';
+    integration?: 'postgresql' | 'redis' | 'nginx';
+  };
+  /** The application it already is in Raion, if any. */
+  monitoredAs: string | null;
+}
+
+/** What "Connect it for me" will do, shown before it does it. */
+export interface ConnectRunningPreview {
+  service: string;
+  project: string;
+  workingDir: string;
+  configFiles: string[];
+  overridePath: string;
+  command: string;
+  override: string;
+  settings: string[];
+  agent: string | null;
+  logs: boolean;
+}
+
+export const discoveryApi = {
+  list: () => call<{ containers: DiscoveredContainer[] }>('GET', '/api/v1/discovery'),
+  connectPreview: (name: string) =>
+    call<ConnectRunningPreview>(
+      'GET',
+      `/api/v1/services/${encodeURIComponent(name)}/connect-running`,
+    ),
+  connect: (name: string) =>
+    call<{ job: string }>(
+      'POST',
+      `/api/v1/services/${encodeURIComponent(name)}/connect-running`,
+      {},
+    ),
 };

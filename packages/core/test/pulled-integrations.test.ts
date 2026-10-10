@@ -206,7 +206,7 @@ describe('container logs', () => {
         ),
       ),
     ).toEqual([
-      'RAI-E024 service "cache" runs on the host, but containerLogs collects the logs of a Compose container',
+      'RAI-E024 service "cache" does not run in Docker Compose here, but containerLogs collects the logs of a Compose container',
     ]);
     const duplicate = validateSources(
       files(

@@ -1,3 +1,4 @@
+import { checkSelector } from './checks.js';
 import { capabilityOf } from '../integrations.js';
 import { integrationRows, pulledReceiver } from './integration-signals.js';
 import type { ResolvedService, ResolvedSlo, ResolvedWorkspace } from '../model.js';
@@ -87,6 +88,95 @@ function serviceDashboard(ctx: DashboardContext, svc: ResolvedService): Dashboar
       ),
     ],
   });
+
+  if (svc.checks.length > 0) {
+    const sel = checkSelector(svc);
+    rows.push({
+      title: 'Outside checks',
+      panels: [
+        {
+          type: 'stat',
+          title: 'Up',
+          description: `Whether the last check of ${svc.checks.map((c) => c.url).join(', ')} succeeded (1 = yes, 0 = no).`,
+          datasource: 'prometheus',
+          unit: 'short',
+          width: 6,
+          height: 5,
+          thresholds: [
+            { color: 'red', value: null },
+            { color: 'green', value: 1 },
+          ],
+          targets: [{ refId: 'A', expr: `min(probe_success{${sel}})` }],
+        },
+        {
+          type: 'stat',
+          title: 'Answer time',
+          description: 'How long the last check took, including the HTTPS handshake.',
+          datasource: 'prometheus',
+          unit: 's',
+          width: 6,
+          height: 5,
+          targets: [{ refId: 'A', expr: `max(probe_duration_seconds{${sel}})` }],
+        },
+        {
+          type: 'stat',
+          title: 'Status code',
+          description: 'The HTTP status of the last answer.',
+          datasource: 'prometheus',
+          unit: 'none',
+          width: 6,
+          height: 5,
+          targets: [{ refId: 'A', expr: `max(probe_http_status_code{${sel}})` }],
+        },
+        {
+          type: 'stat',
+          title: 'Certificate expires in',
+          description: 'Time until the HTTPS certificate expires. Empty for plain http addresses.',
+          datasource: 'prometheus',
+          unit: 's',
+          width: 6,
+          height: 5,
+          thresholds: [
+            { color: 'red', value: null },
+            { color: 'orange', value: 7 * 86_400 },
+            { color: 'green', value: 30 * 86_400 },
+          ],
+          targets: [{ refId: 'A', expr: `min(probe_ssl_earliest_cert_expiry{${sel}}) - time()` }],
+        },
+        {
+          type: 'timeseries',
+          title: 'Checks that succeeded',
+          description: 'Share of checks that got a good answer.',
+          datasource: 'prometheus',
+          unit: 'percentunit',
+          min: 0,
+          width: 12,
+          targets: [
+            {
+              refId: 'A',
+              expr: `avg by (instance) (avg_over_time(probe_success{${sel}}[$__rate_interval]))`,
+              legendFormat: '{{instance}}',
+            },
+          ],
+        },
+        {
+          type: 'timeseries',
+          title: 'Answer time',
+          description: 'How long each check took.',
+          datasource: 'prometheus',
+          unit: 's',
+          width: 12,
+          targets: [
+            {
+              refId: 'A',
+              expr: `max by (instance) (probe_duration_seconds{${sel}})`,
+              legendFormat: '{{instance}}',
+            },
+          ],
+        },
+      ],
+    });
+  }
 
   if (http) {
     const m = http.metrics.requestDuration;

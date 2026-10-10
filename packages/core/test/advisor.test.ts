@@ -57,7 +57,7 @@ metadata:
   name: fraud-api
 spec:
   type: api
-  language: java
+  language: php
 `;
 
 function files(overrides: Record<string, string> = {}): SourceFile[] {
@@ -138,7 +138,7 @@ describe('advisor rules (configuration only)', () => {
 
   it('service-without-golden-signals: explains that the language has no integration yet', () => {
     const f = find(report.findings, 'service-without-golden-signals/fraud-api');
-    expect(f.fix).toContain('Raion has no java integration');
+    expect(f.fix).toContain('Raion has no php integration');
     expect(f.autofix).toBeUndefined();
   });
 

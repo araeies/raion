@@ -1,3 +1,4 @@
+import { checkSelector } from './checks.js';
 import { capabilityOf } from '../integrations.js';
 import type { ResolvedService, ResolvedSlo, ResolvedWorkspace } from '../model.js';
 import type { AlertRule } from './alerts.js';
@@ -86,7 +87,27 @@ function num(n: number): number {
 
 /** Whether Raion can compute this SLO for this service. */
 export function sloSupported(svc: ResolvedService, slo: ResolvedSlo): boolean {
-  return slo.sli.type === 'custom' || capabilityOf(svc.capabilities, 'http.server') !== undefined;
+  return (
+    slo.sli.type === 'custom' ||
+    capabilityOf(svc.capabilities, 'http.server') !== undefined ||
+    (svc.checks.length > 0 && (slo.sli.type === 'availability' || slo.sli.type === 'latency'))
+  );
+}
+
+/**
+ * SLIs measured by outside checks, as time slices: each evaluation counts the share of recent
+ * checks that failed (or were slower than the threshold).
+ */
+function checkSliQueries(
+  svc: ResolvedService,
+  slo: ResolvedSlo,
+): { bad: string; total: string; method: 'Timeslices' } {
+  const sel = checkSelector(svc);
+  const bad =
+    slo.sli.type === 'latency'
+      ? `avg(avg_over_time((probe_duration_seconds{${sel}} > bool ${slo.sli.thresholdMs / 1000})[5m:30s]))`
+      : `1 - avg(avg_over_time(probe_success{${sel}}[5m]))`;
+  return { bad, total: 'vector(1)', method: 'Timeslices' };
 }
 
 /** PromQL for bad and total events per second (5-minute rate) of an SLI. */
@@ -100,7 +121,11 @@ export function sliQueries(
       ? { bad: sli.bad, total: sli.total, method: 'Occurrences' }
       : { bad: `(${sli.total}) - (${sli.good!})`, total: sli.total, method: 'Occurrences' };
   }
-  const m = capabilityOf(svc.capabilities, 'http.server')!.metrics.requestDuration;
+  const http = capabilityOf(svc.capabilities, 'http.server');
+  if (!http && (sli.type === 'availability' || sli.type === 'latency')) {
+    return checkSliQueries(svc, slo);
+  }
+  const m = http!.metrics.requestDuration;
   const sel = `service_name=${q(svc.name)}`;
   const total = `sum(rate(${m.name}_count{${sel}}[5m]))`;
   switch (sli.type) {
@@ -216,6 +241,27 @@ export function sloRules(ws: ResolvedWorkspace, svc: ResolvedService, slo: Resol
           ? `${svc.name} is failing its ${slo.target}% objective (${describeSli(slo)}) at ${fastest}× or more the sustainable rate: at this pace the ${slo.window} error budget is gone in about ${hoursText(windowHours / fastest)}. Act now.`
           : `${svc.name} has been using its ${slo.window} error budget faster than it can afford for hours (${describeSli(slo)}, objective ${slo.target}%). Not urgent, but plan a fix before the budget runs out.`,
       ),
+      guide:
+        severity === 'page'
+          ? {
+              title: `${svc.name} is quickly missing its reliability target`,
+              meaning: `Your target for ${svc.name} is that ${slo.target}% of requests are good (${describeSli(slo)}) over ${slo.window}. The other ${num(100 - slo.target)}% is its "error budget": the failures you can afford. Right now it is failing so often that the whole budget would be gone in about ${hoursText(windowHours / fastest)}.`,
+              condition: `Over both a longer and a shorter recent period, requests are failing at ${fastest} times or more the rate the target allows. Checking two periods means it fires quickly for a real problem, and stops soon after it is fixed.`,
+              action: [
+                `Treat it as urgent: open ${svc.name} in Raion and find what is failing or slow.`,
+                'If something was changed recently, consider undoing it.',
+                ...(slo.policy ? [`Your team's error budget policy: ${slo.policy}`] : []),
+              ],
+            }
+          : {
+              title: `${svc.name} is steadily missing its reliability target`,
+              meaning: `Your target for ${svc.name} is that ${slo.target}% of requests are good (${describeSli(slo)}) over ${slo.window}. For hours it has been failing slightly more than that allows, so it is using up its error budget (the failures you can afford) faster than it should.`,
+              condition: `Over several hours, requests have failed at ${fastest} times or more the rate the target allows.`,
+              action: [
+                `Not urgent: plan time to find out what is failing in ${svc.name} before the budget runs out.`,
+                ...(slo.policy ? [`Your team's error budget policy: ${slo.policy}`] : []),
+              ],
+            },
     });
   }
   alerts.push({
@@ -227,6 +273,16 @@ export function sloRules(ws: ResolvedWorkspace, svc: ResolvedService, slo: Resol
       `${svc.name}: the "${slo.name}" error budget is spent`,
       `${svc.name} has missed its ${slo.target}% objective over the last ${slo.window} (${describeSli(slo)}).`,
     ),
+    guide: {
+      title: `${svc.name} missed its reliability target`,
+      meaning: `Over the last ${slo.window}, fewer than ${slo.target}% of requests to ${svc.name} were good (${describeSli(slo)}). Its error budget, the failures you can afford, is used up.`,
+      condition: `The share of good requests over the last ${slo.window} has been below ${slo.target}% for 10 minutes.`,
+      action: [
+        `Make ${svc.name}'s reliability the priority until it is back above the target.`,
+        ...(slo.policy ? [`Your team's error budget policy: ${slo.policy}`] : []),
+        'If the target is stricter than what users need, you can lower it on the SLOs page.',
+      ],
+    },
   });
 
   return { recording, alerts };

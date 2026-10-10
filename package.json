@@ -20,7 +20,7 @@
     "clean": "node scripts/clean.mjs",
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run build && pnpm run test && pnpm run validate:examples",
     "raion": "node apps/cli/dist/index.js",
-    "test:e2e": "node e2e/rules.e2e.mjs && node e2e/runtime.e2e.mjs && node e2e/nodejs.e2e.mjs && node e2e/polyglot.e2e.mjs"
+    "test:e2e": "node e2e/rules.e2e.mjs && node e2e/agents.e2e.mjs && node e2e/runtime.e2e.mjs && node e2e/nodejs.e2e.mjs && node e2e/polyglot.e2e.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

@@ -1,112 +1,313 @@
 import { useState } from 'react';
-import { sloApi, type NewSloRequest, type SloView, type User } from '../api';
-import { Disclosure, ErrorMessage, Field, useSubmit } from '../components';
+import { api, sloApi, type SloView, type User } from '../api';
+import { ErrorMessage } from '../components';
+import { EditError, EditResult, useEdit } from '../edits';
 import { linkHandler } from '../router';
+import {
+  EmptyState,
+  Explain,
+  Icon,
+  InfoTip,
+  Loading,
+  PageHeader,
+  Pill,
+  Technical,
+  type Tone,
+} from '../ui';
 import { useLoad } from '../useLoad';
 
-const HEALTH: Record<string, { label: string; cls: string }> = {
-  healthy: { label: 'healthy', cls: 'badge-ok' },
-  'at-risk': { label: 'at risk', cls: 'badge-warning' },
-  exhausted: { label: 'budget spent', cls: 'badge-error' },
-  'no-data': { label: 'no data yet', cls: '' },
+const HEALTH: Record<string, { label: string; tone: Tone }> = {
+  healthy: { label: 'On track', tone: 'ok' },
+  'at-risk': { label: 'At risk', tone: 'warn' },
+  exhausted: { label: 'Missed', tone: 'crit' },
+  'no-data': { label: 'No data yet', tone: 'neutral' },
 };
 
 function pct(v: number | null, digits = 2): string {
   return v === null ? '—' : `${(v * 100).toFixed(digits)}%`;
 }
 
-function describe(slo: SloView): string {
+/** "99.9% of requests succeed" */
+export function goalInWords(slo: Pick<SloView, 'sli' | 'target'>): string {
   switch (slo.sli.type) {
     case 'availability':
-      return 'requests that do not fail with a server error';
+      return `${slo.target}% of requests succeed`;
     case 'latency':
-      return `requests faster than ${slo.sli.thresholdMs} ms`;
+      return `${slo.target}% of requests answer within ${slo.sli.thresholdMs} ms`;
     case 'throughput':
-      return `5-minute periods with at least ${slo.sli.minRequestsPerSecond} requests/s`;
+      return `it handles at least ${slo.sli.minRequestsPerSecond} requests/s, ${slo.target}% of the time`;
     default:
-      return 'good events (custom query)';
+      return `${slo.target}% of events are good`;
   }
 }
 
-/** Allowed failure, in words: "0.1% of requests, about 43 minutes of full outage per 30 days". */
-function budgetInWords(slo: SloView): string {
-  const days = Number.parseInt(slo.window, 10);
-  const minutes = Math.round(slo.errorBudgetRatio * days * 24 * 60);
-  const share = `${Number((slo.errorBudgetRatio * 100).toPrecision(4))}%`;
-  return `${share} may fail — about ${minutes >= 120 ? `${Math.round(minutes / 60)} hours` : `${minutes} minutes`} of full outage per ${slo.window}`;
+/** "about 43 minutes of failure per 30 days" */
+function allowance(ratio: number, window: string): string {
+  const days = Number.parseInt(window, 10);
+  const minutes = Math.round(ratio * days * 24 * 60);
+  return minutes >= 120 ? `about ${Math.round(minutes / 60)} hours` : `about ${minutes} minutes`;
 }
 
-export function SloCard({ slo, showService }: { slo: SloView; showService: boolean }) {
+const WHAT_IS = (
+  <Explain summary="What is a reliability goal?">
+    <p>
+      A reliability goal (in SRE terms, an <em>SLO</em>) says how reliable an application should be
+      for its users, for example “99.9% of requests succeed over 30 days”.
+    </p>
+    <p>
+      The 0.1% that may fail is the <strong>error budget</strong>: about 43 minutes a month. While
+      budget is left, you can ship changes freely. When it runs low, reliability work comes first.
+      Raion warns you when the budget is being used up too fast, instead of alerting on every blip.
+    </p>
+  </Explain>
+);
+
+export function SloCard({
+  slo,
+  showService,
+  canEdit,
+  onChanged,
+}: {
+  slo: SloView;
+  showService: boolean;
+  canEdit: boolean;
+  onChanged: () => void;
+}) {
   const s = slo.status;
   const health = slo.evaluated
     ? HEALTH[s?.health ?? 'no-data']!
-    : { label: 'not evaluated', cls: '' };
+    : { label: 'Not measured yet', tone: 'neutral' as Tone };
   const remaining = s?.budgetRemaining ?? null;
+  const [editing, setEditing] = useState(false);
+  const remove = useEdit(onChanged);
+  const [confirm, setConfirm] = useState(false);
   return (
     <li className="card slo-card">
-      <h3>
-        <span>
+      <div className="spread">
+        <div>
           {showService && (
-            <>
-              <a
-                href={`/services/${slo.service}`}
-                onClick={linkHandler(`/services/${slo.service}`)}
-              >
-                {slo.service}
-              </a>{' '}
-              ·{' '}
-            </>
+            <a
+              className="small"
+              href={`/services/${slo.service}`}
+              onClick={linkHandler(`/services/${slo.service}`)}
+            >
+              {slo.service}
+            </a>
           )}
-          {slo.name}
-        </span>
-        <span className={`badge ${health.cls}`}>{health.label}</span>
-      </h3>
-      <p>
-        <strong>{slo.target}%</strong> of {describe(slo)}, over a rolling {slo.window}.
-      </p>
-      {slo.description && <p className="muted">{slo.description}</p>}
+          <h3 style={{ margin: '2px 0 0' }}>{goalInWords(slo)}</h3>
+          <span className="small muted">
+            over any {slo.window.replace('d', ' days')}
+            {slo.description ? ` · ${slo.description}` : ''}
+          </span>
+        </div>
+        <Pill tone={health.tone} live={health.tone === 'ok'}>
+          {health.label}
+        </Pill>
+      </div>
+
       {slo.evaluated && s ? (
         <>
-          <dl className="slo-numbers">
-            <dt>Now</dt>
-            <dd>{pct(s.sli, 3)}</dd>
-            <dt>Budget left</dt>
-            <dd>{pct(remaining, 0)}</dd>
-            <dt>Burn rate (1 h)</dt>
-            <dd>{s.burnRate1h === null ? '—' : `${s.burnRate1h.toFixed(1)}×`}</dd>
-          </dl>
+          <div style={{ margin: '16px 0 6px' }} className="spread">
+            <span className="small">
+              <strong>Error budget left</strong>{' '}
+              <InfoTip label="the error budget">
+                The failures you can still afford in this period. 100% means none used, 0% means the
+                goal is missed.
+              </InfoTip>
+            </span>
+            <strong className="num">
+              {pct(remaining === null ? null : Math.max(0, remaining), 0)}
+            </strong>
+          </div>
           {remaining !== null && (
             <div
-              className="budget-bar"
+              className={`progress ${s.health === 'exhausted' ? 'crit' : s.health === 'at-risk' ? 'warn' : ''}`}
               role="meter"
               aria-label="Error budget left"
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={Math.max(0, Math.round(remaining * 100))}
             >
-              <span
-                style={{ width: `${Math.max(0, Math.min(100, remaining * 100))}%` }}
-                className={HEALTH[s.health]?.cls}
-              />
+              <span style={{ width: `${Math.max(0, Math.min(100, remaining * 100))}%` }} />
             </div>
           )}
-          <p className="muted">{s.message}</p>
+          <div className="row small muted" style={{ marginTop: 10, gap: '6px 18px' }}>
+            <span>
+              Right now: <strong className="num">{pct(s.sli, 3)}</strong>
+            </span>
+            <span>
+              Using the budget at{' '}
+              <strong className="num">
+                {s.burnRate1h === null ? '—' : `${s.burnRate1h.toFixed(1)}×`}
+              </strong>{' '}
+              the affordable pace{' '}
+              <InfoTip label="the burn rate">
+                1× uses exactly the whole budget over the period. Above 1×, the goal will be missed
+                if it continues. For a 30-day goal, Raion raises an urgent alert at 14× for an hour
+                or 6× for six hours, and a warning for slower burns that last a day or more.
+              </InfoTip>
+            </span>
+          </div>
+          {s.message && (
+            <p className="small" style={{ margin: '8px 0 0' }}>
+              {s.message}
+            </p>
+          )}
         </>
       ) : (
-        <p className="muted">
-          {slo.reason ?? 'Not deployed yet: apply the configuration to start measuring.'}
+        <p className="small muted" style={{ margin: '12px 0 0' }}>
+          {slo.reason ?? 'Raion starts measuring it once the change is deployed.'}
         </p>
       )}
-      <p className="muted">Error budget: {budgetInWords(slo)}.</p>
-      {slo.policy && (
-        <p>
-          <strong>When the budget is spent:</strong> {slo.policy}
-        </p>
-      )}
-      <p className="muted">
-        Defined in <code>{slo.source.file}</code>
+
+      <p className="small muted" style={{ margin: '10px 0 0' }}>
+        Allows {allowance(slo.errorBudgetRatio, slo.window)} of failure per{' '}
+        {slo.window.replace('d', ' days')}.
+        {slo.policy && (
+          <>
+            {' '}
+            <strong>When it runs out:</strong> {slo.policy}
+          </>
+        )}
       </p>
+
+      {canEdit && !editing && (
+        <div className="row" style={{ marginTop: 12 }}>
+          <button type="button" className="secondary small" onClick={() => setEditing(true)}>
+            Change
+          </button>
+          {!confirm ? (
+            <button type="button" className="ghost small" onClick={() => setConfirm(true)}>
+              Remove
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="danger small"
+                disabled={remove.pending}
+                onClick={() =>
+                  void remove.save({ kind: 'slo.remove', service: slo.service, name: slo.name })
+                }
+              >
+                Yes, remove it
+              </button>
+              <button type="button" className="ghost small" onClick={() => setConfirm(false)}>
+                Cancel
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      <EditError error={remove.error} />
+      {editing && (
+        <EditGoal
+          slo={slo}
+          onDone={() => {
+            setEditing(false);
+            onChanged();
+          }}
+          onCancel={() => setEditing(false)}
+        />
+      )}
+      <Technical>
+        <p className="small" style={{ margin: 0 }}>
+          SLO <code>{slo.name}</code> of <code>{slo.service}</code>, defined in{' '}
+          <code>{slo.source.file}</code>. Objective {slo.target}% over {slo.window}; error budget
+          ratio {slo.errorBudgetRatio}.
+        </p>
+      </Technical>
     </li>
+  );
+}
+
+const TARGETS = [
+  { value: 99, text: 'about 7 hours of failure a month' },
+  { value: 99.5, text: 'about 3½ hours a month' },
+  { value: 99.9, text: 'about 43 minutes a month', recommended: true },
+  { value: 99.95, text: 'about 22 minutes a month' },
+];
+
+function EditGoal({
+  slo,
+  onDone,
+  onCancel,
+}: {
+  slo: SloView;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [target, setTarget] = useState(String(slo.target));
+  const [window, setWindow] = useState(slo.window);
+  const [description, setDescription] = useState(slo.description ?? '');
+  const [policy, setPolicy] = useState(slo.policy ?? '');
+  const edit = useEdit(onDone);
+  const set: Record<string, unknown> = {};
+  if (Number(target) !== slo.target) set.target = Number(target);
+  if (window !== slo.window) set.window = window;
+  if (description.trim() !== (slo.description ?? '')) set.description = description.trim() || null;
+  if (policy.trim() !== (slo.policy ?? '')) set.policy = policy.trim() || null;
+  return (
+    <form
+      className="stack wide"
+      style={{ marginTop: 14 }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void edit.save({ kind: 'slo.update', service: slo.service, name: slo.name, set });
+      }}
+    >
+      <div className="grid-2">
+        <div className="field">
+          <label htmlFor={`t-${slo.name}`}>Goal (%)</label>
+          <input
+            id={`t-${slo.name}`}
+            type="number"
+            step="0.01"
+            min="50"
+            max="99.999"
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor={`w-${slo.name}`}>Over</label>
+          <select id={`w-${slo.name}`} value={window} onChange={(e) => setWindow(e.target.value)}>
+            {['7d', '14d', '28d', '30d', '90d'].map((w) => (
+              <option key={w} value={w}>
+                {w.replace('d', ' days')}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor={`d-${slo.name}`}>What it protects</label>
+          <input
+            id={`d-${slo.name}`}
+            value={description}
+            placeholder="e.g. Customers can pay"
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor={`p-${slo.name}`}>When the budget runs out, we…</label>
+          <input
+            id={`p-${slo.name}`}
+            value={policy}
+            placeholder="e.g. pause new features until it recovers"
+            onChange={(e) => setPolicy(e.target.value)}
+          />
+        </div>
+      </div>
+      <EditError error={edit.error} />
+      <div className="row">
+        <button type="submit" disabled={edit.pending || Object.keys(set).length === 0}>
+          Save
+        </button>
+        <button type="button" className="ghost" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -115,55 +316,85 @@ export function SlosPage({ user }: { user: User }) {
   const result = useLoad(() => sloApi.list(), `slos:${tick}`, { keepPrevious: true });
   const [creating, setCreating] = useState(false);
   const canEdit = user.role !== 'viewer';
-
-  if (result.state === 'loading') return <p aria-busy="true">Loading SLOs…</p>;
+  const reload = () => setTick((t) => t + 1);
+  const header = (
+    <PageHeader
+      title="Reliability goals"
+      description="How reliable each application should be for its users, and how close it is to that goal."
+      actions={
+        <>
+          {canEdit && (
+            <button type="button" onClick={() => setCreating(true)} disabled={creating}>
+              <Icon name="plus" /> Set a goal
+            </button>
+          )}
+          <a
+            className="button secondary"
+            href="/grafana/d/raion-slos"
+            target="_blank"
+            rel="noopener"
+          >
+            <Icon name="chart" /> Goals dashboard
+          </a>
+        </>
+      }
+    />
+  );
+  if (result.state === 'loading')
+    return (
+      <>
+        {header}
+        <Loading />
+      </>
+    );
   if (result.state === 'error')
-    return <p role="alert">Could not load SLOs: {result.error.message}</p>;
+    return (
+      <>
+        {header}
+        <p className="notice notice-error" role="alert">
+          {result.error.message}
+        </p>
+      </>
+    );
   const { slos } = result.data;
   return (
     <>
-      <h1>Service level objectives</h1>
-      <p className="lead">
-        An SLO says how reliable a service must be for its users, e.g. “99.9% of requests succeed
-        over 30 days”. The 0.1% that may fail is the <strong>error budget</strong>: spend it on
-        change, protect it when it runs low. Raion measures each SLO and alerts when the budget
-        burns too fast.
-      </p>
-      <div className="actions">
-        {canEdit && (
-          <button type="button" onClick={() => setCreating(true)} disabled={creating}>
-            Create an SLO
-          </button>
-        )}
-        <a
-          className="button secondary-link"
-          href="/grafana/d/raion-slos"
-          target="_blank"
-          rel="noopener"
-        >
-          SLO dashboard ↗
-        </a>
-      </div>
+      {header}
+      {WHAT_IS}
       {creating && (
-        <CreateSlo
+        <CreateGoal
           onDone={() => {
             setCreating(false);
-            setTick((t) => t + 1);
+            reload();
           }}
+          onCancel={() => setCreating(false)}
         />
       )}
-      {slos.length === 0 ? (
-        <div className="empty">
-          <p>No SLOs yet.</p>
-          <p>
-            Start with availability for your most important service: 99.9% over 30 days is a common
-            first objective.
-          </p>
-        </div>
+      {slos.length === 0 && !creating ? (
+        <EmptyState
+          icon="target"
+          title="No reliability goals yet"
+          action={
+            canEdit ? (
+              <button type="button" onClick={() => setCreating(true)}>
+                <Icon name="plus" /> Set your first goal
+              </button>
+            ) : undefined
+          }
+        >
+          Start with your most important application: 99.9% of requests succeed over 30 days is a
+          common first goal.
+        </EmptyState>
       ) : (
-        <ul className="cards">
+        <ul className="cards" style={{ listStyle: 'none', padding: 0, marginTop: 16 }}>
           {slos.map((slo) => (
-            <SloCard key={`${slo.service}/${slo.name}`} slo={slo} showService />
+            <SloCard
+              key={`${slo.service}/${slo.name}`}
+              slo={slo}
+              showService
+              canEdit={canEdit}
+              onChanged={reload}
+            />
           ))}
         </ul>
       )}
@@ -177,21 +408,22 @@ function OpenSloView() {
   const [error, setError] = useState<unknown>(null);
   return (
     <details
-      className="disclosure"
+      className="technical"
+      style={{ marginTop: 20 }}
       onToggle={(e) => {
         if (e.currentTarget.open && text === null) sloApi.openslo().then(setText, setError);
       }}
     >
-      <summary>Show as OpenSLO</summary>
-      <div className="disclosure-body">
-        <p className="muted">
-          The same SLOs in <a href="https://openslo.com">OpenSLO</a> v1, the vendor-neutral SLO
-          format. Export them with <code>raion slo export</code>.
+      <summary>The same goals in OpenSLO format</summary>
+      <div className="technical-body">
+        <p className="small muted" style={{ marginTop: 0 }}>
+          <a href="https://openslo.com">OpenSLO</a> v1 is the vendor-neutral format for reliability
+          goals. From a terminal: <code>raion slo export</code> and <code>raion slo import</code>.
         </p>
         <ErrorMessage error={error} />
         {text !== null && (
-          <pre>
-            <code>{text || '# no SLOs'}</code>
+          <pre style={{ margin: 0 }}>
+            <code>{text || '# no goals yet'}</code>
           </pre>
         )}
       </div>
@@ -199,231 +431,248 @@ function OpenSloView() {
   );
 }
 
+const KINDS = [
+  {
+    value: 'availability',
+    title: 'Requests succeed',
+    text: 'Requests do not fail with a server error.',
+  },
+  {
+    value: 'latency',
+    title: 'Requests are fast',
+    text: 'Requests are answered within a time you choose.',
+  },
+  {
+    value: 'throughput',
+    title: 'It keeps up',
+    text: 'It handles at least a minimum number of requests.',
+  },
+] as const;
+
 const LATENCY_THRESHOLDS = [100, 250, 500, 750, 1000, 2500];
 
-export function CreateSlo({ service, onDone }: { service?: string; onDone: () => void }) {
-  const services = useLoad(() => sloApi.list(), 'slo-services');
+export function CreateGoal({
+  service,
+  onDone,
+  onCancel,
+}: {
+  service?: string;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const services = useLoad(() => api.services(), 'goal-services');
   const [form, setForm] = useState({
     service: service ?? '',
-    type: 'availability' as 'availability' | 'latency' | 'throughput',
-    target: '99.9',
+    kind: 'availability' as (typeof KINDS)[number]['value'],
+    target: 99.9,
     window: '30d',
-    thresholdMs: '500',
-    minRps: '1',
-    name: '',
-    description: '',
-    policy: '',
+    thresholdMs: 500,
+    minRps: 1,
   });
-  const [created, setCreated] = useState<{ file: string; content: string } | null>(null);
-  const set = (key: keyof typeof form) => (value: string) =>
-    setForm((f) => ({ ...f, [key]: value }));
+  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
+    setForm((f) => ({ ...f, [k]: v }));
+  const edit = useEdit();
+  const names = services.state === 'ready' ? services.data.services.map((s) => s.name) : [];
+  const chosen = form.service || names[0] || '';
 
-  const { pending, error, onSubmit } = useSubmit(async () => {
-    const sli: NewSloRequest['sli'] =
-      form.type === 'availability'
-        ? { type: 'availability' }
-        : form.type === 'latency'
-          ? { type: 'latency', thresholdMs: Number(form.thresholdMs) }
-          : { type: 'throughput', minRequestsPerSecond: Number(form.minRps) };
-    const result = await sloApi.create({
-      service: form.service,
-      name: form.name || form.type,
-      sli,
-      target: Number(form.target),
-      window: form.window,
-      ...(form.description ? { description: form.description } : {}),
-      ...(form.policy ? { policy: form.policy } : {}),
-    });
-    setCreated(result);
-  });
-
-  if (created) {
+  if (edit.saved) {
     return (
-      <section className="notice notice-ok" aria-live="polite">
-        <h2>SLO created</h2>
-        <p>
-          Saved as <code>{created.file}</code> in the workspace. It is measured once the
-          configuration is applied.
-        </p>
-        <pre>
-          <code>{created.content}</code>
-        </pre>
-        <div className="actions">
-          <a className="button" href="/runtime" onClick={linkHandler('/runtime')}>
-            Review and apply
-          </a>
+      <div className="stack">
+        <EditResult view={edit.saved} />
+        <div className="row">
           <button type="button" className="secondary" onClick={onDone}>
             Done
           </button>
         </div>
-      </section>
+      </div>
     );
   }
-
-  const serviceNames =
-    services.state === 'ready' ? [...new Set(services.data.slos.map((s) => s.service))] : [];
   return (
-    <section className="card" aria-labelledby="create-slo-title">
-      <h2 id="create-slo-title">Create an SLO</h2>
-      <form onSubmit={onSubmit}>
-        {!service && (
-          <Field
-            id="slo-service"
-            label="Service"
-            value={form.service}
-            onChange={set('service')}
-            hint={
-              serviceNames.length
-                ? `e.g. ${serviceNames.join(', ')}`
-                : 'The service name from your workspace.'
-            }
-          />
-        )}
-        <fieldset className="field">
-          <legend>What should it measure?</legend>
-          {(
-            [
-              ['availability', 'Availability: requests succeed (no server errors)'],
-              ['latency', 'Latency: requests are fast enough'],
-              ['throughput', 'Throughput: at least a minimum rate of requests is handled'],
-            ] as const
-          ).map(([value, label]) => (
-            <label key={value} className="checkbox">
+    <form
+      className="card stack wide"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void edit.save({
+          kind: 'slo.add',
+          slo: {
+            service: chosen,
+            name: form.kind,
+            sli:
+              form.kind === 'availability'
+                ? { type: 'availability' }
+                : form.kind === 'latency'
+                  ? { type: 'latency', thresholdMs: form.thresholdMs }
+                  : { type: 'throughput', minRequestsPerSecond: form.minRps },
+            target: form.target,
+            window: form.window,
+          },
+        });
+      }}
+    >
+      <h2 style={{ margin: 0 }}>Set a reliability goal</h2>
+      {!service && (
+        <div className="field" style={{ maxWidth: 360 }}>
+          <label htmlFor="goal-service">For which application?</label>
+          <select id="goal-service" value={chosen} onChange={(e) => set('service', e.target.value)}>
+            {names.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+        <legend className="label" style={{ marginBottom: 8 }}>
+          What matters to its users?
+        </legend>
+        <div className="choices">
+          {KINDS.map((k) => (
+            <label className="choice" key={k.value}>
               <input
                 type="radio"
-                name="slo-type"
-                value={value}
-                checked={form.type === value}
-                onChange={() => set('type')(value)}
-              />{' '}
-              {label}
+                name="goal-kind"
+                checked={form.kind === k.value}
+                onChange={() => set('kind', k.value)}
+              />
+              <span className="choice-title">{k.title}</span>
+              <small>{k.text}</small>
             </label>
           ))}
-        </fieldset>
-        {form.type === 'latency' && (
-          <div className="field">
-            <label htmlFor="slo-threshold">Fast enough means under</label>
-            <select
-              id="slo-threshold"
-              value={form.thresholdMs}
-              onChange={(e) => set('thresholdMs')(e.target.value)}
-            >
-              {LATENCY_THRESHOLDS.map((ms) => (
-                <option key={ms} value={ms}>
-                  {ms} ms
-                </option>
-              ))}
-            </select>
-            <small className="hint">
-              These are the thresholds the service's metrics can measure exactly.
-            </small>
-          </div>
-        )}
-        {form.type === 'throughput' && (
-          <Field
-            id="slo-rps"
-            label="Minimum requests per second"
+        </div>
+      </fieldset>
+      {form.kind === 'latency' && (
+        <div className="field" style={{ maxWidth: 280 }}>
+          <label htmlFor="goal-ms">Fast enough means within</label>
+          <select
+            id="goal-ms"
+            value={form.thresholdMs}
+            onChange={(e) => set('thresholdMs', Number(e.target.value))}
+          >
+            {LATENCY_THRESHOLDS.map((ms) => (
+              <option key={ms} value={ms}>
+                {ms} ms
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {form.kind === 'throughput' && (
+        <div className="field" style={{ maxWidth: 280 }}>
+          <label htmlFor="goal-rps">At least this many requests per second</label>
+          <input
+            id="goal-rps"
+            type="number"
+            min="0.01"
+            step="0.01"
             value={form.minRps}
-            onChange={set('minRps')}
-          />
-        )}
-        <div className="inline-form">
-          <Field
-            id="slo-target"
-            label="Objective (%)"
-            value={form.target}
-            onChange={set('target')}
-            hint="99.9 allows about 43 minutes of failure per 30 days."
-          />
-          <div className="field">
-            <label htmlFor="slo-window">Over</label>
-            <select
-              id="slo-window"
-              value={form.window}
-              onChange={(e) => set('window')(e.target.value)}
-            >
-              {['7d', '14d', '28d', '30d', '90d'].map((w) => (
-                <option key={w} value={w}>
-                  {w.replace('d', ' days')}
-                </option>
-              ))}
-            </select>
-          </div>
-          <Field
-            id="slo-name"
-            label="Name (optional)"
-            value={form.name}
-            onChange={set('name')}
-            required={false}
-            hint={`Default: ${form.type}`}
+            onChange={(e) => set('minRps', Number(e.target.value))}
           />
         </div>
-        <Disclosure summary="Description and error budget policy (optional)">
-          <Field
-            id="slo-description"
-            label="What does it protect?"
-            value={form.description}
-            onChange={set('description')}
-            required={false}
-            hint="e.g. “Customers can pay”."
-          />
-          <Field
-            id="slo-policy"
-            label="When the budget is spent, we…"
-            value={form.policy}
-            onChange={set('policy')}
-            required={false}
-            hint="e.g. “freeze feature releases until it recovers”."
-          />
-        </Disclosure>
-        <ErrorMessage error={error} />
-        <div className="actions">
-          <button type="submit" disabled={pending}>
-            {pending ? 'Creating…' : 'Create SLO'}
-          </button>
-          <button type="button" className="secondary" onClick={onDone}>
-            Cancel
-          </button>
+      )}
+      <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+        <legend className="label" style={{ marginBottom: 8 }}>
+          How reliable?
+        </legend>
+        <div className="choices">
+          {TARGETS.map((t) => (
+            <label className="choice" key={t.value}>
+              <input
+                type="radio"
+                name="goal-target"
+                checked={form.target === t.value}
+                onChange={() => set('target', t.value)}
+              />
+              <span className="choice-title">
+                {t.value}% {t.recommended && <Pill tone="accent">Recommended</Pill>}
+              </span>
+              <small>Allows {t.text}</small>
+            </label>
+          ))}
         </div>
-      </form>
-    </section>
+      </fieldset>
+      <div className="field" style={{ maxWidth: 200 }}>
+        <label htmlFor="goal-window">Measured over</label>
+        <select
+          id="goal-window"
+          value={form.window}
+          onChange={(e) => set('window', e.target.value)}
+        >
+          {['7d', '14d', '28d', '30d', '90d'].map((w) => (
+            <option key={w} value={w}>
+              {w.replace('d', ' days')}
+            </option>
+          ))}
+        </select>
+      </div>
+      <EditError error={edit.error} />
+      <div className="row">
+        <button type="submit" disabled={edit.pending || !chosen}>
+          {edit.pending ? 'Saving…' : 'Set this goal'}
+        </button>
+        <button type="button" className="ghost" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 
-/** The SLOs of one service, for the service page. */
+/** The goals of one application, for its page. */
 export function ServiceSlos({ name, user }: { name: string; user: User }) {
   const [tick, setTick] = useState(0);
   const [creating, setCreating] = useState(false);
   const result = useLoad(() => sloApi.list(name), `slos:${name}:${tick}`, { keepPrevious: true });
-  if (result.state !== 'ready') return null;
+  const canEdit = user.role !== 'viewer';
+  if (result.state !== 'ready') return <Loading />;
+  const reload = () => setTick((t) => t + 1);
   return (
-    <>
-      {result.data.slos.length === 0 ? (
-        <p className="muted">
-          No SLOs yet. SLOs describe how reliable this service should be, from your users' point of
-          view.
-        </p>
+    <div className="stack">
+      {WHAT_IS}
+      {result.data.slos.length === 0 && !creating ? (
+        <EmptyState
+          icon="target"
+          title="No reliability goal yet"
+          action={
+            canEdit ? (
+              <button type="button" onClick={() => setCreating(true)}>
+                <Icon name="plus" /> Set a goal
+              </button>
+            ) : undefined
+          }
+        >
+          A goal tells Raion how reliable {name} should be, so it can warn you before users notice.
+        </EmptyState>
       ) : (
-        <ul className="cards">
+        <ul className="cards" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
           {result.data.slos.map((slo) => (
-            <SloCard key={slo.name} slo={slo} showService={false} />
+            <SloCard
+              key={slo.name}
+              slo={slo}
+              showService={false}
+              canEdit={canEdit}
+              onChanged={reload}
+            />
           ))}
         </ul>
       )}
-      {user.role !== 'viewer' && !creating && (
-        <button type="button" className="secondary" onClick={() => setCreating(true)}>
-          Add an SLO
-        </button>
+      {canEdit && !creating && result.data.slos.length > 0 && (
+        <div>
+          <button type="button" className="secondary" onClick={() => setCreating(true)}>
+            <Icon name="plus" /> Add another goal
+          </button>
+        </div>
       )}
       {creating && (
-        <CreateSlo
+        <CreateGoal
           service={name}
           onDone={() => {
             setCreating(false);
-            setTick((t) => t + 1);
+            reload();
           }}
+          onCancel={() => setCreating(false)}
         />
       )}
-    </>
+    </div>
   );
 }

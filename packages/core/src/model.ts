@@ -9,6 +9,7 @@ import type {
   Sli,
   Team,
   WorkspaceSpec,
+  ServiceCheck,
 } from '@raion/schema';
 import type { LoadedIntegration, ResolvedCapability } from './integrations.js';
 
@@ -63,6 +64,8 @@ export interface ResolvedService {
   signals: ServiceSpec['signals'];
   /** Collect the container's stdout/stderr through Docker's logging driver. */
   containerLogs: boolean;
+  /** Outside checks of its address (runtime "remote" requires at least one). */
+  checks: ServiceCheck[];
   dependencies: ServiceSpec['dependencies'];
   slos: ResolvedSlo[];
   runbooks: ServiceSpec['runbooks'];

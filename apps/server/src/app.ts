@@ -7,6 +7,7 @@ import fastifyStatic from '@fastify/static';
 import { loadWorkspace, ServiceRegistry } from '@raion/core';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { AccountError, Accounts } from './accounts.js';
 import { MAX_TOKEN_DAYS, TokenError, USERNAME, type AuthService } from './auth.js';
 import { HttpError } from './errors.js';
 import { createMetrics } from './metrics.js';
@@ -15,6 +16,7 @@ import { passwordProblem } from './passwords.js';
 import { registerAlertRoutes } from './alerts-routes.js';
 import { registerSloRoutes } from './slo-routes.js';
 import { registerAdvisorRoutes } from './advisor-routes.js';
+import { registerWorkspaceRoutes } from './workspace-routes.js';
 import { registerGrafanaProxy } from './grafana-proxy.js';
 import { AlertInbox } from './inbox.js';
 import { registerRuntimeRoutes } from './runtime-routes.js';
@@ -67,6 +69,7 @@ const roleSchema = z.enum(ROLES);
 
 export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   const { store, auth } = options;
+  const accounts = new Accounts(store, auth);
   const cookieName = options.secure ? '__Host-raion_session' : 'raion_session';
   const allowedHosts = new Set(options.allowedHosts.map((h) => h.toLowerCase()));
 
@@ -91,6 +94,11 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
 
   // ----- Error handling: consistent JSON, no internals leaked ---------------------------
   app.setErrorHandler((error: Error & { statusCode?: number; code?: string }, request, reply) => {
+    if (error instanceof AccountError) {
+      return reply
+        .status(error.status)
+        .send({ error: { code: error.code, message: error.message } });
+    }
     if (error instanceof HttpError) {
       return reply
         .status(error.statusCode)
@@ -508,11 +516,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     { preHandler: [requireRole('admin'), requireSession] },
     async (request, reply) => {
       const body = credentials.extend({ role: roleSchema }).parse(request.body);
-      if (store.findUser(body.username))
-        throw new HttpError(409, 'user_exists', `user "${body.username}" already exists`);
-      const problem = passwordProblem(body.password, body.username);
-      if (problem) throw new HttpError(400, 'weak_password', problem);
-      const user = await auth.createUser(body.username, body.password, body.role);
+      const user = await accounts.create(body.username, body.password, body.role);
       audit(request, 'user.create', 'success', user.username, { role: user.role });
       return reply.status(201).send({ user });
     },
@@ -530,42 +534,9 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
           password: z.string().max(256).optional(),
         })
         .parse(request.body);
-      const target = store.findUser(username);
-      if (!target) throw new HttpError(404, 'not_found', `user "${username}" not found`);
-      if (target.sso && (body.role !== undefined || body.password !== undefined)) {
-        throw new HttpError(
-          409,
-          'sso_account',
-          `"${username}" signs in with single sign-on; the identity provider decides the role and password`,
-        );
-      }
-
-      const losesAdmin =
-        target.role === 'admin' &&
-        !target.disabled &&
-        ((body.role && body.role !== 'admin') || body.disabled === true);
-      if (losesAdmin && store.countActiveAdmins() <= 1) {
-        throw new HttpError(409, 'last_admin', 'cannot remove the last active admin');
-      }
-      let passwordHash: string | undefined;
-      if (body.password !== undefined) {
-        const problem = passwordProblem(body.password, username);
-        if (problem) throw new HttpError(400, 'weak_password', problem);
-        passwordHash = await auth.hashPassword(body.password);
-      }
-      store.updateUser(target.id, {
-        ...(body.role ? { role: body.role } : {}),
-        ...(body.disabled !== undefined ? { disabled: body.disabled } : {}),
-        ...(passwordHash ? { passwordHash } : {}),
-      });
-      // Any privilege or credential change ends the user's existing sessions.
-      store.deleteUserSessions(target.id);
-      audit(request, 'user.update', 'success', username, {
-        ...(body.role ? { role: body.role } : {}),
-        ...(body.disabled !== undefined ? { disabled: body.disabled } : {}),
-        ...(passwordHash ? { passwordReset: true } : {}),
-      });
-      return { user: store.getUser(target.id) };
+      const { user, details } = await accounts.update(username, body);
+      audit(request, 'user.update', 'success', username, details);
+      return { user };
     },
   );
 
@@ -667,6 +638,10 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
             features: ws.features,
             teams: ws.teams,
             receivers: ws.receivers.map((r) => ({ name: r.name, type: r.type })),
+            defaultReceiver: ws.defaultReceiver ?? null,
+            retention: ws.retention,
+            publicUrl: ws.server.publicUrl,
+            sso: ws.server.sso?.oidc ? { displayName: ws.server.sso.oidc.displayName } : null,
             serviceCount: ws.services.length,
           }
         : null,
@@ -722,6 +697,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   );
   registerSloRoutes(app, runtime, options.workspaceDir, { requireRole, audit });
   registerAdvisorRoutes(app, runtime, options.workspaceDir, { requireRole, audit });
+  registerWorkspaceRoutes(app, runtime, options.workspaceDir, { requireRole, audit });
   await registerGrafanaProxy(app, runtime, cookieName);
 
   app.all('/api/*', async () => {

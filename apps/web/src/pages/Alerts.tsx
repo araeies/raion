@@ -1,26 +1,81 @@
 import { useState } from 'react';
-import { alertsApi, type AlertRecord, type User } from '../api';
-import { Disclosure, ErrorMessage, Field, useSubmit } from '../components';
+import {
+  alertsApi,
+  type AlertRecord,
+  type AlertRule,
+  type AlertsOverview,
+  type PendingAlert,
+  type User,
+} from '../api';
+import { ErrorMessage, Field, useSubmit } from '../components';
 import { linkHandler } from '../router';
+import {
+  dateTime,
+  duration,
+  EmptyState,
+  Explain,
+  Icon,
+  InfoTip,
+  Loading,
+  PageHeader,
+  Pill,
+  Stat,
+  Technical,
+  timeAgo,
+  type Tone,
+} from '../ui';
 import { useLoad } from '../useLoad';
 
 const SEVERITY_ORDER = ['critical', 'warning', 'info', 'none'];
 
-function since(iso: string): string {
-  const minutes = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000));
-  if (minutes < 60) return `${minutes} min`;
-  if (minutes < 48 * 60) return `${Math.round(minutes / 60)} h`;
-  return `${Math.round(minutes / 1440)} days`;
+export function severityTone(severity: string | null | undefined): { tone: Tone; label: string } {
+  if (severity === 'critical') return { tone: 'crit', label: 'Urgent' };
+  if (severity === 'warning') return { tone: 'warn', label: 'Warning' };
+  return { tone: 'neutral', label: 'Info' };
 }
 
-function severityBadge(severity: string | null) {
-  const cls =
-    severity === 'critical' ? 'badge-error' : severity === 'warning' ? 'badge-warning' : '';
-  return <span className={`badge ${cls}`}>{severity ?? 'none'}</span>;
+/** Where an alert comes from, in words. */
+function origin(rule: AlertRule): string {
+  switch (rule.scope) {
+    case 'service':
+      return `One of the checks Raion runs for ${rule.service ?? 'this application'}, because its alerts are turned on.`;
+    case 'slo':
+      return `Created from the reliability goal "${rule.slo ?? ''}" of ${rule.service ?? 'this application'}.`;
+    case 'infrastructure':
+      return 'Raion watches the machine it runs on.';
+    case 'platform':
+      return 'Raion watches its own components, so you know when monitoring itself has a problem.';
+  }
 }
+
+const SCOPES: { scope: AlertRule['scope']; title: string; description: string }[] = [
+  {
+    scope: 'service',
+    title: 'Your applications',
+    description: 'Errors, slow responses and applications that stop reporting.',
+  },
+  {
+    scope: 'slo',
+    title: 'Reliability goals',
+    description: 'Warnings when an application is on course to miss its reliability goal.',
+  },
+  {
+    scope: 'infrastructure',
+    title: 'This machine',
+    description: 'Disk space, memory and processor of the machine Raion runs on.',
+  },
+  {
+    scope: 'platform',
+    title: 'Raion itself',
+    description: 'The components that collect, store and deliver your monitoring data.',
+  },
+];
+
+type Tab = 'firing' | 'pending' | 'history' | 'rules';
 
 export function AlertsPage({ user }: { user: User }) {
   const [tick, setTick] = useState(0);
+  const [tab, setTab] = useState<Tab>('firing');
   const overview = useLoad(() => alertsApi.overview(), `alerts:${tick}`, { keepPrevious: true });
   const silences = useLoad(
     () => alertsApi.silences().catch(() => ({ silences: [] })),
@@ -30,85 +85,161 @@ export function AlertsPage({ user }: { user: User }) {
   const reload = () => setTick((t) => t + 1);
   const canEdit = user.role !== 'viewer';
 
-  if (overview.state === 'loading') return <p aria-busy="true">Loading alerts…</p>;
+  const header = (
+    <PageHeader
+      title="Alerts"
+      description="Raion tells you here when something needs attention, what it means and what to do. Every alert appears here, whoever else is notified."
+      actions={
+        <>
+          <button type="button" className="secondary" onClick={reload}>
+            Refresh
+          </button>
+          <a
+            className="button secondary"
+            href="/grafana/d/raion-alerts"
+            target="_blank"
+            rel="noopener"
+          >
+            <Icon name="chart" /> Alert history chart
+          </a>
+        </>
+      }
+    />
+  );
+  if (overview.state === 'loading')
+    return (
+      <>
+        {header}
+        <Loading label="Loading alerts…" />
+      </>
+    );
   if (overview.state === 'error')
-    return <p role="alert">Could not load alerts: {overview.error.message}</p>;
+    return (
+      <>
+        {header}
+        <p className="notice notice-error" role="alert">
+          Could not load alerts: {overview.error.message}
+        </p>
+      </>
+    );
   const data = overview.data;
   const firing = [...data.firing].sort(
     (a, b) =>
       SEVERITY_ORDER.indexOf(a.severity ?? 'none') - SEVERITY_ORDER.indexOf(b.severity ?? 'none'),
   );
 
+  const tabs: { id: Tab; label: string }[] = [
+    { id: 'firing', label: `Firing now (${firing.length})` },
+    { id: 'pending', label: `About to fire (${data.pending.length})` },
+    { id: 'history', label: 'History' },
+    { id: 'rules', label: `What Raion watches (${data.rules.length})` },
+  ];
+
   return (
     <>
-      <h1>Alerts</h1>
-      <p className="lead">
-        Alerts tell you when something needs attention. Every alert appears here, whoever else is
-        notified. Silencing an alert stops notifications for a while; it stays visible here.
-      </p>
+      {header}
+      <SelfTest data={data} />
 
-      {!data.deployed ? (
-        <div className="notice notice-warning">
-          <h2>Not deployed yet</h2>
-          <p>Alerts start once the observability stack is deployed.</p>
-        </div>
-      ) : data.health?.ok ? (
-        <div className="notice notice-ok">
-          <h2>Alerting works</h2>
-          <p>{data.health.message}</p>
-        </div>
-      ) : (
-        <div className="notice notice-error" role="alert">
-          <h2>Alerting is broken</h2>
-          <p>{data.health?.message ?? 'The alerting pipeline could not be checked.'}</p>
-        </div>
-      )}
-
-      <div className="actions">
-        <a className="button" href="/grafana/d/raion-alerts" target="_blank" rel="noopener">
-          Alerts dashboard ↗
-        </a>
-        <button type="button" className="secondary" onClick={reload}>
-          Refresh
-        </button>
+      <div className="stats" style={{ margin: '20px 0 24px' }}>
+        <Stat
+          label="Firing now"
+          value={firing.length}
+          sub={firing.length ? 'need attention' : 'all clear'}
+        />
+        <Stat
+          label="About to fire"
+          value={data.pending.length}
+          sub="problems Raion is watching"
+          help="The problem is happening, but Raion waits a few minutes before alerting, so that a short blip does not wake anyone up."
+        />
+        <Stat label="Resolved recently" value={data.resolved.length} sub="last 30 days" />
       </div>
 
-      <section aria-labelledby="firing-title">
-        <h2 id="firing-title">Firing now ({firing.length})</h2>
-        {firing.length === 0 ? (
-          <p className="muted">Nothing is firing.</p>
-        ) : (
-          <ul className="alert-list">
-            {firing.map((a) => (
-              <AlertCard
-                key={`${a.fingerprint}-${a.startsAt}`}
-                alert={a}
-                canEdit={canEdit}
-                onChange={reload}
-              />
-            ))}
-          </ul>
-        )}
-      </section>
+      <div className="tabs" role="tablist" aria-label="Alerts">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`tab-${t.id}`}
+            aria-selected={tab === t.id}
+            aria-controls={`panel-${t.id}`}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+        {tab === 'firing' &&
+          (firing.length === 0 ? (
+            <EmptyState icon="ok" title="Nothing needs attention">
+              {data.deployed
+                ? 'No alert is firing. Raion keeps checking every 30 seconds.'
+                : 'Alerts start once the observability stack is deployed.'}
+            </EmptyState>
+          ) : (
+            <ul className="alert-list">
+              {firing.map((a) => (
+                <AlertCard
+                  key={`${a.fingerprint}-${a.startsAt}`}
+                  alert={a}
+                  canEdit={canEdit}
+                  onChange={reload}
+                />
+              ))}
+            </ul>
+          ))}
+
+        {tab === 'pending' &&
+          (data.pending.length === 0 ? (
+            <EmptyState icon="clock" title="Nothing is about to fire">
+              When a problem starts, it appears here first. If it lasts, it becomes an alert.
+            </EmptyState>
+          ) : (
+            <ul className="alert-list">
+              {data.pending.map((a) => (
+                <PendingCard key={`${a.alertname}-${JSON.stringify(a.labels)}`} alert={a} />
+              ))}
+            </ul>
+          ))}
+
+        {tab === 'history' && <History resolved={data.resolved} />}
+
+        {tab === 'rules' && <WatchList rules={data.rules} />}
+      </div>
 
       {silences.state === 'ready' && silences.data.silences.length > 0 && (
-        <section aria-labelledby="silences-title">
-          <h2 id="silences-title">Silences</h2>
-          <ul>
+        <section className="card" aria-labelledby="silences-title" style={{ marginTop: 24 }}>
+          <div className="card-header">
+            <h2 id="silences-title">
+              Silenced{' '}
+              <InfoTip label="a silence">
+                A silence stops notifications for a while, for example while a fix is being
+                deployed. The alert stays visible here.
+              </InfoTip>
+            </h2>
+          </div>
+          <ul className="checklist">
             {silences.data.silences.map((s) => (
               <li key={s.id}>
-                <code>{s.matchers.map((m) => `${m.name}=${m.value}`).join(', ')}</code> until{' '}
-                {new Date(s.endsAt).toLocaleString()} — {s.comment}{' '}
-                <span className="muted">({s.createdBy})</span>{' '}
+                <span className="grow" style={{ flex: 1 }}>
+                  <strong>{s.matchers.map((m) => m.value).join(' · ')}</strong>
+                  <br />
+                  <span className="muted small">
+                    Until {dateTime(s.endsAt)} · by {s.createdBy} · “{s.comment}”
+                  </span>
+                </span>
                 {canEdit && (
                   <button
                     type="button"
-                    className="secondary"
+                    className="secondary small"
                     onClick={() => {
                       void alertsApi.unsilence(s.id).then(reload);
                     }}
                   >
-                    Remove
+                    End silence
                   </button>
                 )}
               </li>
@@ -116,69 +247,177 @@ export function AlertsPage({ user }: { user: User }) {
           </ul>
         </section>
       )}
-
-      <section aria-labelledby="resolved-title">
-        <h2 id="resolved-title">Recently resolved</h2>
-        {data.resolved.length === 0 ? (
-          <p className="muted">No resolved alerts yet.</p>
-        ) : (
-          <table>
-            <caption className="visually-hidden">Recently resolved alerts</caption>
-            <thead>
-              <tr>
-                <th scope="col">Alert</th>
-                <th scope="col">Service</th>
-                <th scope="col">Severity</th>
-                <th scope="col">Started</th>
-                <th scope="col">Resolved</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.resolved.map((a) => (
-                <tr key={`${a.fingerprint}-${a.startsAt}`}>
-                  <th scope="row">{a.alertname}</th>
-                  <td>{a.service ?? <span className="muted">—</span>}</td>
-                  <td>{severityBadge(a.severity)}</td>
-                  <td>{new Date(a.startsAt).toLocaleString()}</td>
-                  <td>{a.resolvedAt ? new Date(a.resolvedAt).toLocaleString() : ''}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <section aria-labelledby="rules-title">
-        <h2 id="rules-title">What Raion watches</h2>
-        <Disclosure summary={`Show the ${data.rules.length} alert rules`}>
-          <table>
-            <caption className="visually-hidden">Alert rules</caption>
-            <thead>
-              <tr>
-                <th scope="col">Alert</th>
-                <th scope="col">Applies to</th>
-                <th scope="col">Severity</th>
-                <th scope="col">Fires after</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.rules.map((r) => (
-                <tr key={`${r.group}-${r.alert}`}>
-                  <th scope="row">{r.alert}</th>
-                  <td>{r.service ?? r.group.replace('raion-', '')}</td>
-                  <td>{severityBadge(r.severity)}</td>
-                  <td>{r.for ?? 'immediately'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="muted">
-            Thresholds are set per service in the workspace (<code>alerts:</code>); the full rules
-            are in the generated configuration on the Observability stack page.
-          </p>
-        </Disclosure>
-      </section>
     </>
+  );
+}
+
+/** The always-firing self-test, explained instead of hidden. */
+function SelfTest({ data }: { data: AlertsOverview }) {
+  const rule = data.selfTest.rule;
+  if (!data.deployed) {
+    return (
+      <div className="notice notice-info callout">
+        <Icon name="info" />
+        <div>
+          <strong>Alerts start once Raion is deployed.</strong> Deploy it from the Observability
+          stack page, and Raion starts watching your applications, this machine and itself.
+        </div>
+      </div>
+    );
+  }
+  const ok = data.health?.ok ?? false;
+  return (
+    <div
+      className={`notice ${ok ? 'notice-ok' : 'notice-error'} callout`}
+      role={ok ? undefined : 'alert'}
+    >
+      <Icon name={ok ? 'ok' : 'alert'} />
+      <div style={{ flex: 1 }}>
+        <div className="spread">
+          <strong>{ok ? 'Alerting works' : 'Alerts are not being delivered'}</strong>
+          <Pill tone={ok ? 'ok' : 'crit'} live={ok}>
+            Self-test {ok ? 'arriving' : 'missing'}
+          </Pill>
+        </div>
+        <p style={{ margin: '4px 0 0' }}>
+          {ok
+            ? 'Raion checks continuously that its alerts are evaluated and delivered.'
+            : (data.health?.message ?? 'Raion could not check its alerting.')}
+        </p>
+        {rule && (
+          <Explain summary="How does Raion know?">
+            <p>{rule.meaning}</p>
+            <p className="muted small" style={{ marginBottom: 0 }}>
+              In Grafana and in the raw configuration, this self-test is the alert named{' '}
+              <code>{rule.alert}</code>. It is never listed among your alerts and never notifies
+              anyone.
+            </p>
+          </Explain>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ServiceLink({ service }: { service: string }) {
+  return (
+    <a href={`/services/${service}`} onClick={linkHandler(`/services/${service}`)}>
+      {service}
+    </a>
+  );
+}
+
+/** The explanation shared by firing, pending and resolved alerts. */
+function Facts({
+  rule,
+  summary,
+  started,
+  ended,
+}: {
+  rule: AlertRule | null;
+  summary?: string;
+  started: { label: string; at: string };
+  ended?: string | null;
+}) {
+  return (
+    <dl className="facts">
+      {summary && (
+        <>
+          <dt>Right now</dt>
+          <dd>{summary}</dd>
+        </>
+      )}
+      {rule?.meaning && (
+        <>
+          <dt>What it means</dt>
+          <dd>{rule.meaning}</dd>
+        </>
+      )}
+      {rule?.condition && (
+        <>
+          <dt>Why it fired</dt>
+          <dd>{rule.condition}</dd>
+        </>
+      )}
+      {rule && rule.action.length > 0 && (
+        <>
+          <dt>What to do</dt>
+          <dd>
+            <ol>
+              {rule.action.map((a) => (
+                <li key={a}>{a}</li>
+              ))}
+            </ol>
+          </dd>
+        </>
+      )}
+      <dt>{started.label}</dt>
+      <dd>
+        {dateTime(started.at)}{' '}
+        <span className="muted">
+          ({ended ? `lasted ${duration(started.at, ended)}` : timeAgo(started.at)})
+        </span>
+      </dd>
+      {rule && (
+        <>
+          <dt>Where it comes from</dt>
+          <dd>{origin(rule)}</dd>
+        </>
+      )}
+    </dl>
+  );
+}
+
+function TechnicalAlert({
+  alertname,
+  labels,
+  rule,
+}: {
+  alertname: string;
+  labels: Record<string, string>;
+  rule: AlertRule | null;
+}) {
+  return (
+    <Technical>
+      <dl className="properties">
+        <dt>Alert rule</dt>
+        <dd>
+          <code>{alertname}</code>
+          {rule && (
+            <>
+              {' '}
+              in group <code>{rule.group}</code>
+            </>
+          )}
+        </dd>
+        {rule?.for && (
+          <>
+            <dt>Must last</dt>
+            <dd>{rule.for}</dd>
+          </>
+        )}
+        <dt>Labels</dt>
+        <dd>
+          {Object.entries(labels)
+            .filter(([k]) => k !== 'alertname')
+            .map(([k, v]) => (
+              <code key={k} style={{ marginRight: 6, display: 'inline-block' }}>
+                {k}={v}
+              </code>
+            ))}
+        </dd>
+      </dl>
+      {rule && (
+        <>
+          <p className="small muted" style={{ margin: '12px 0 6px' }}>
+            Condition (PromQL), evaluated by Prometheus every 30 seconds:
+          </p>
+          <pre>
+            <code>{rule.expr}</code>
+          </pre>
+        </>
+      )}
+    </Technical>
   );
 }
 
@@ -192,65 +431,226 @@ export function AlertCard({
   onChange: () => void;
 }) {
   const [silencing, setSilencing] = useState(false);
+  const sev = severityTone(alert.severity);
+  const silenced = alert.state === 'suppressed';
   return (
-    <li className="card alert-card">
-      <h3>
-        {severityBadge(alert.severity)} {alert.alertname}
+    <li className={`alert-card sev-${alert.severity === 'critical' ? 'critical' : 'warning'}`}>
+      <div className="alert-head">
+        <h3>{alert.rule?.title ?? alert.alertname}</h3>
+        <div className="row">
+          <Pill tone={sev.tone}>{sev.label}</Pill>
+          {silenced ? (
+            <Pill tone="neutral">Silenced</Pill>
+          ) : (
+            <Pill tone="crit" live>
+              Firing
+            </Pill>
+          )}
+        </div>
+      </div>
+      <div className="alert-meta">
         {alert.service && (
-          <>
-            {' · '}
-            <a
-              href={`/services/${alert.service}`}
-              onClick={linkHandler(`/services/${alert.service}`)}
-            >
-              {alert.service}
-            </a>
-          </>
+          <span>
+            Application: <ServiceLink service={alert.service} />
+          </span>
         )}
-        {alert.state === 'suppressed' && <span className="badge"> silenced</span>}
-      </h3>
-      <p>
-        <strong>{alert.annotations.summary}</strong>
-      </p>
-      <p>{alert.annotations.description}</p>
-      <p className="muted">
-        Firing for {since(alert.startsAt)}
+        <span>Firing for {duration(alert.startsAt)}</span>
+      </div>
+      <Facts
+        rule={alert.rule}
+        summary={alert.annotations.summary}
+        started={{ label: 'Started', at: alert.startsAt }}
+      />
+      <div className="row" style={{ marginTop: 14 }}>
         {alert.annotations.dashboard_url && (
-          <>
-            {' · '}
-            <a href={alert.annotations.dashboard_url} target="_blank" rel="noopener">
-              Dashboard ↗
-            </a>
-          </>
+          <a
+            className="button secondary small"
+            href={alert.annotations.dashboard_url}
+            target="_blank"
+            rel="noopener"
+          >
+            <Icon name="chart" size={15} /> Open dashboard
+          </a>
         )}
         {alert.annotations.runbook_url && (
-          <>
-            {' · '}
-            <a href={alert.annotations.runbook_url} target="_blank" rel="noopener noreferrer">
-              Runbook ↗
-            </a>
-          </>
+          <a
+            className="button secondary small"
+            href={alert.annotations.runbook_url}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Your team's runbook <Icon name="external" size={14} />
+          </a>
         )}
-      </p>
-      {canEdit && alert.state !== 'suppressed' && !silencing && (
-        <button type="button" className="secondary" onClick={() => setSilencing(true)}>
-          Silence…
-        </button>
-      )}
+        {canEdit && !silenced && !silencing && (
+          <button type="button" className="secondary small" onClick={() => setSilencing(true)}>
+            Silence…
+          </button>
+        )}
+      </div>
       {silencing && (
         <SilenceForm
           alert={alert}
+          onCancel={() => setSilencing(false)}
           onDone={() => {
             setSilencing(false);
             onChange();
           }}
         />
       )}
+      <TechnicalAlert alertname={alert.alertname} labels={alert.labels} rule={alert.rule} />
     </li>
   );
 }
 
-function SilenceForm({ alert, onDone }: { alert: AlertRecord; onDone: () => void }) {
+function PendingCard({ alert }: { alert: PendingAlert }) {
+  const service = alert.labels.service_name;
+  const sev = severityTone(alert.labels.severity);
+  return (
+    <li className="alert-card sev-pending">
+      <div className="alert-head">
+        <h3>{alert.rule?.title ?? alert.alertname}</h3>
+        <div className="row">
+          <Pill tone={sev.tone}>{sev.label}</Pill>
+          <Pill tone="info">About to fire</Pill>
+        </div>
+      </div>
+      <div className="alert-meta">
+        {service && (
+          <span>
+            Application: <ServiceLink service={service} />
+          </span>
+        )}
+        <span>
+          Problem seen for {duration(alert.activeAt)}
+          {alert.rule?.for ? `; it becomes an alert if it lasts ${alert.rule.for}` : ''}
+        </span>
+      </div>
+      <Facts rule={alert.rule} started={{ label: 'Problem started', at: alert.activeAt }} />
+      <TechnicalAlert alertname={alert.alertname} labels={alert.labels} rule={alert.rule} />
+    </li>
+  );
+}
+
+function History({ resolved }: { resolved: AlertRecord[] }) {
+  if (resolved.length === 0)
+    return (
+      <EmptyState icon="clock" title="No past alerts">
+        Alerts that stop firing are kept here for 30 days.
+      </EmptyState>
+    );
+  return (
+    <div className="table-wrap">
+      <table>
+        <caption className="visually-hidden">Alerts that fired in the last 30 days</caption>
+        <thead>
+          <tr>
+            <th scope="col">Alert</th>
+            <th scope="col">Application</th>
+            <th scope="col">Started</th>
+            <th scope="col">Lasted</th>
+          </tr>
+        </thead>
+        <tbody>
+          {resolved.map((a) => {
+            const sev = severityTone(a.severity);
+            return (
+              <tr key={`${a.fingerprint}-${a.startsAt}`}>
+                <th scope="row">
+                  <span className="row" style={{ gap: 8 }}>
+                    <Pill tone={sev.tone}>{sev.label}</Pill>
+                    {a.rule?.title ?? a.alertname}
+                  </span>
+                  {a.source === 'prometheus-history' && (
+                    <span className="small muted">
+                      Recovered from history{' '}
+                      <InfoTip label="a recovered alert">
+                        This alert fired while the Raion server was not running. Raion found it in
+                        the monitoring data afterwards, so its details are limited.
+                      </InfoTip>
+                    </span>
+                  )}
+                </th>
+                <td>
+                  {a.service ? (
+                    <ServiceLink service={a.service} />
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
+                <td className="nowrap">{dateTime(a.startsAt)}</td>
+                <td className="nowrap">{a.resolvedAt ? duration(a.startsAt, a.resolvedAt) : ''}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function WatchList({ rules }: { rules: AlertRule[] }) {
+  return (
+    <div className="stack">
+      <p className="muted" style={{ margin: 0 }}>
+        Raion sets these checks up for you from your workspace. Each one runs every 30 seconds.
+      </p>
+      {SCOPES.map((s) => {
+        const list = rules.filter((r) => r.scope === s.scope && r.alert !== 'Watchdog');
+        if (list.length === 0) return null;
+        return (
+          <section className="card" key={s.scope} aria-labelledby={`scope-${s.scope}`}>
+            <div className="card-header">
+              <div>
+                <h2 id={`scope-${s.scope}`}>{s.title}</h2>
+                <span className="muted small">{s.description}</span>
+              </div>
+              <span className="pill">{list.length}</span>
+            </div>
+            <ul className="checklist">
+              {list.map((r) => {
+                const sev = severityTone(r.severity);
+                return (
+                  <li key={`${r.group}-${r.alert}`}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="spread">
+                        <strong>{r.title}</strong>
+                        <span className="row" style={{ gap: 6 }}>
+                          {r.service && <span className="pill">{r.service}</span>}
+                          <Pill tone={sev.tone}>{sev.label}</Pill>
+                        </span>
+                      </div>
+                      <span className="small muted">{r.condition}</span>
+                      <Technical>
+                        <p className="small" style={{ margin: '0 0 6px' }}>
+                          <code>{r.alert}</code> · group <code>{r.group}</code>
+                          {r.for ? ` · must last ${r.for}` : ''}
+                        </p>
+                        <pre>
+                          <code>{r.expr}</code>
+                        </pre>
+                      </Technical>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function SilenceForm({
+  alert,
+  onDone,
+  onCancel,
+}: {
+  alert: AlertRecord;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
   const [minutes, setMinutes] = useState(60);
   const [comment, setComment] = useState('');
   const { pending, error, onSubmit } = useSubmit(async () => {
@@ -263,47 +663,62 @@ function SilenceForm({ alert, onDone }: { alert: AlertRecord; onDone: () => void
     onDone();
   });
   return (
-    <form onSubmit={onSubmit} className="inline-form">
-      <div className="field">
-        <label htmlFor={`silence-${alert.fingerprint}`}>Silence for</label>
-        <select
-          id={`silence-${alert.fingerprint}`}
-          value={minutes}
-          onChange={(e) => setMinutes(Number(e.target.value))}
-        >
-          <option value={60}>1 hour</option>
-          <option value={240}>4 hours</option>
-          <option value={1440}>1 day</option>
-          <option value={10080}>1 week</option>
-        </select>
+    <form
+      onSubmit={onSubmit}
+      className="card"
+      style={{ marginTop: 14, background: 'var(--surface-2)' }}
+    >
+      <p className="small" style={{ marginTop: 0 }}>
+        Silencing stops notifications for this alert for a while. It stays visible here, and comes
+        back by itself when the silence ends.
+      </p>
+      <div className="inline-form">
+        <div className="field">
+          <label htmlFor={`silence-${alert.fingerprint}`}>For how long</label>
+          <select
+            id={`silence-${alert.fingerprint}`}
+            value={minutes}
+            onChange={(e) => setMinutes(Number(e.target.value))}
+          >
+            <option value={60}>1 hour</option>
+            <option value={240}>4 hours</option>
+            <option value={1440}>1 day</option>
+            <option value={10080}>1 week</option>
+          </select>
+        </div>
+        <Field
+          id={`comment-${alert.fingerprint}`}
+          label="Why?"
+          value={comment}
+          onChange={setComment}
+          hint="Everyone sees this, e.g. “known issue, fix deploying”."
+        />
       </div>
-      <Field
-        id={`comment-${alert.fingerprint}`}
-        label="Why?"
-        value={comment}
-        onChange={setComment}
-        hint="Visible to everyone, e.g. “known issue, fix deploying”."
-      />
       <ErrorMessage error={error} />
-      <button type="submit" disabled={pending}>
-        {pending ? 'Silencing…' : 'Silence'}
-      </button>
+      <div className="row" style={{ marginTop: 12 }}>
+        <button type="submit" disabled={pending}>
+          {pending ? 'Silencing…' : 'Silence'}
+        </button>
+        <button type="button" className="ghost" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
     </form>
   );
 }
 
-/** Firing alerts of one service, for the service page. */
+/** Alerts of one application, for its page. */
 export function ServiceAlerts({ name, user }: { name: string; user: User }) {
   const [tick, setTick] = useState(0);
   const result = useLoad(() => alertsApi.overview(name), `service-alerts:${name}:${tick}`, {
     keepPrevious: true,
   });
   if (result.state !== 'ready') return null;
-  const { firing, rules } = result.data;
+  const { firing, pending, rules } = result.data;
   return (
     <>
-      {firing.length === 0 ? (
-        <p className="muted">No alerts are firing for this service.</p>
+      {firing.length === 0 && pending.length === 0 ? (
+        <p className="muted">Nothing needs attention for this application.</p>
       ) : (
         <ul className="alert-list">
           {firing.map((a) => (
@@ -314,12 +729,26 @@ export function ServiceAlerts({ name, user }: { name: string; user: User }) {
               onChange={() => setTick((t) => t + 1)}
             />
           ))}
+          {pending.map((a) => (
+            <PendingCard key={`${a.alertname}-${JSON.stringify(a.labels)}`} alert={a} />
+          ))}
         </ul>
       )}
-      <p className="muted">
-        Watched:{' '}
-        {rules.map((r) => r.alert).join(', ') || 'nothing (no HTTP metrics or alerts disabled)'}.
-      </p>
+      <Explain summary={`What Raion watches for this application (${rules.length})`}>
+        {rules.length === 0 ? (
+          <p>
+            Nothing yet: Raion needs request measurements from it, or its alerts are turned off.
+          </p>
+        ) : (
+          <ul>
+            {rules.map((r) => (
+              <li key={`${r.group}-${r.alert}`}>
+                <strong>{r.title}</strong>: {r.condition}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Explain>
     </>
   );
 }
@@ -328,32 +757,67 @@ export function ServiceAlerts({ name, user }: { name: string; user: User }) {
 export function SecretsSection() {
   const [tick, setTick] = useState(0);
   const result = useLoad(() => alertsApi.secrets(), `secrets:${tick}`);
-  if (result.state !== 'ready' || result.data.needed.length === 0) return null;
+  if (result.state !== 'ready') return null;
+  const unused = result.data.stored.filter((k) => !result.data.needed.some((n) => n.key === k));
+  if (result.data.needed.length === 0 && unused.length === 0)
+    return (
+      <EmptyState icon="key" title="No secrets needed">
+        Secrets appear here when a notification channel or a database needs a password.
+      </EmptyState>
+    );
   return (
-    <section aria-labelledby="secrets-title">
-      <h2 id="secrets-title">Secrets</h2>
-      <p className="muted">
-        Credentials for notification receivers and database monitoring. Values are stored on the
-        Raion server and can be replaced but never read back. Apply afterwards so the components
-        pick them up.
-      </p>
-      <ul className="target-list">
+    <section className="card" aria-labelledby="secrets-title">
+      <div className="card-header">
+        <h2 id="secrets-title">
+          Secrets{' '}
+          <InfoTip label="a secret">
+            Passwords and private addresses that Raion needs, for example to send alerts to Slack or
+            read a database. They are stored on the Raion server, never in your workspace files, and
+            can be replaced but never read back.
+          </InfoTip>
+        </h2>
+      </div>
+      <p className="muted small">Deploy afterwards so the components pick up new values.</p>
+      <ul className="checklist">
         {result.data.needed.map((s) => (
           <li key={s.key}>
-            <span className={`badge ${s.present ? 'badge-ok' : 'badge-error'}`}>
-              {s.present ? 'set' : 'missing'}
-            </span>{' '}
-            <code>{s.key}</code>{' '}
-            {s.source === 'env' ? (
-              <span className="muted">
-                read from the environment of the process that runs “raion apply”
-              </span>
-            ) : (
-              <SecretForm name={s.key} onSaved={() => setTick((t) => t + 1)} />
-            )}
+            <div style={{ flex: 1 }}>
+              <div className="row">
+                <code>{s.key}</code>
+                <Pill tone={s.present ? 'ok' : 'crit'}>{s.present ? 'Set' : 'Missing'}</Pill>
+              </div>
+              {s.source === 'env' ? (
+                <p className="muted small" style={{ margin: '6px 0 0' }}>
+                  Read from the environment of the process that deploys Raion.
+                </p>
+              ) : (
+                <SecretForm name={s.key} onSaved={() => setTick((t) => t + 1)} />
+              )}
+            </div>
           </li>
         ))}
       </ul>
+      {unused.length > 0 && (
+        <>
+          <h3 className="small muted" style={{ margin: '16px 0 6px' }}>
+            Stored but no longer used
+          </h3>
+          <ul className="checklist">
+            {unused.map((key) => (
+              <li key={key}>
+                <code style={{ flex: 1 }}>{key}</code>
+                <button
+                  type="button"
+                  className="ghost small"
+                  onClick={() => void alertsApi.removeSecret(key).then(() => setTick((t) => t + 1))}
+                >
+                  Delete
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </section>
   );
 }
@@ -366,7 +830,7 @@ function SecretForm({ name, onSaved }: { name: string; onSaved: () => void }) {
     onSaved();
   });
   return (
-    <form onSubmit={onSubmit} className="inline-form">
+    <form onSubmit={onSubmit} className="inline-form" style={{ marginTop: 8 }}>
       <Field
         id={`secret-${name}`}
         label={`New value for ${name}`}

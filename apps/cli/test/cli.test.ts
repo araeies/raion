@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { adviseCommand } from '../src/advise.js';
+import { sparkline } from '../src/runtime.js';
 import { integrationsListCommand, integrationsLockCommand } from '../src/integrations.js';
 import { EXIT, initCommand, UsageError, validateCommand, type Output } from '../src/commands.js';
 
@@ -179,5 +180,66 @@ describe('cancelling with Ctrl+C', () => {
     expect(isCancellation(error)).toBe(true);
     expect(isCancellation(new Cancelled())).toBe(true);
     expect(isCancellation(new Error('disk full'))).toBe(false);
+  });
+});
+
+describe('operations shared with the web UI', () => {
+  it('refuses to change the stack while the web UI is changing it', async () => {
+    const { renderWorkspace, writeWorkspace } = await import('@raion/core');
+    const { OperationJournal, StatePaths } = await import('@raion/deploy');
+    const { applyCommand } = await import('../src/runtime.js');
+    await writeWorkspace(
+      dir,
+      renderWorkspace({ name: 'acme', level: 1, environment: 'production' }),
+    );
+    const web = new OperationJournal(new StatePaths(dir)).begin({
+      kind: 'apply',
+      via: 'web',
+      actor: 'alice',
+    });
+    const io = capture();
+    const code = await applyCommand(dir, { yes: true }, io, false);
+    web.succeed();
+    expect(code).toBe(EXIT.USAGE);
+    expect(io.stderr.join('\n')).toMatch(/apply already in progress by alice \(web UI\)/);
+    // Nothing else was recorded: the refused attempt never started.
+    expect(new OperationJournal(new StatePaths(dir)).list()).toHaveLength(1);
+  });
+});
+
+describe('web UI and command line parity', () => {
+  it('documents every command in the parity reference', async () => {
+    const { createProgram } = await import('../src/program.js');
+    type Cmd = { name(): string; commands: readonly Cmd[] };
+    const walk = (cmd: Cmd, prefix: string): string[] =>
+      cmd.commands.flatMap((c) => {
+        const name = prefix ? `${prefix} ${c.name()}` : c.name();
+        return c.commands.length > 0 ? [name, ...walk(c, name)] : [name];
+      });
+    const commands = walk(createProgram(capture()), '');
+    const doc = await readFile(
+      join(import.meta.dirname, '..', '..', '..', 'docs', 'reference', 'ui-and-cli.md'),
+      'utf8',
+    );
+    const missing = commands.filter((c) => !doc.includes(`\`raion ${c}`));
+    expect(missing).toEqual([]);
+  });
+});
+
+describe('raion history', () => {
+  it('draws a terminal sparkline with gaps where nothing arrived', () => {
+    expect(
+      sparkline(
+        [
+          [0, 1],
+          [10, 4],
+          [30, 8],
+        ],
+        0,
+        40,
+        4,
+      ),
+    ).toBe('▂▅ █');
+    expect(sparkline([], 0, 40, 3)).toBe('   ');
   });
 });

@@ -63,6 +63,8 @@ jobs:
         run: node e2e/runtime.e2e.mjs
       - name: Unit-test the generated alert rules with promtool
         run: node e2e/rules.e2e.mjs
+      - name: Add OpenTelemetry agents to Node.js, Python and Java containers without changing their images
+        run: node e2e/agents.e2e.mjs
       - name: Connect the example Node.js application, verify telemetry, dashboards and alerts
         run: node e2e/nodejs.e2e.mjs
 

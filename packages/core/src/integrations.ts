@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { builtinIntegrationsDir } from '@raion/integrations';
 import {
   integrationManifest,
@@ -81,6 +81,20 @@ function checkManifest(manifest: IntegrationManifest): void {
       }
     }
   }
+  // Conditions elsewhere must name boolean parameters the manifest declares.
+  const agent = manifest.spec.instrumentation?.agent;
+  const conditions = [
+    ...manifest.spec.requirements.map((r) => r.when),
+    agent?.when,
+    ...(agent && typeof agent.path !== 'string' ? agent.path.cases.map((c) => c.when) : []),
+  ];
+  for (const w of conditions) {
+    if (w && manifest.spec.parameters[w.param]?.type !== 'boolean') {
+      throw new IntegrationLoadError(
+        `${manifest.metadata.name}: a condition refers to "${w.param}", which is not a boolean parameter`,
+      );
+    }
+  }
 }
 
 /** Parses and validates a manifest from its text; `origin` names it in errors. */
@@ -152,7 +166,14 @@ export class IntegrationRegistry {
   /** The integration a service of this language uses when it lists none explicitly. */
   defaultFor(language: ServiceSpec['language']): LoadedIntegration | undefined {
     if (!language) return undefined;
-    return [...this.#byName.values()].find((i) => i.manifest.spec.languages.includes(language));
+    const candidates = [...this.#byName.values()].filter((i) =>
+      i.manifest.spec.languages.includes(language),
+    );
+    // A workspace's own package for the language was added on purpose: it wins over Raion's.
+    return (
+      candidates.find((i) => !resolve(i.dir).startsWith(resolve(builtinIntegrationsDir))) ??
+      candidates[0]
+    );
   }
 }
 

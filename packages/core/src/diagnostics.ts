@@ -50,6 +50,8 @@ export const CODES = {
   CONTAINER_LOGS_DUPLICATE: 'RAI-W108',
   INTEGRATION_PACKAGE: 'RAI-E025',
   INTEGRATION_NOT_LOCKED: 'RAI-E026',
+  REMOTE_WITHOUT_CHECKS: 'RAI-E027',
+  REMOTE_INTEGRATION_IGNORED: 'RAI-W109',
 } as const;
 
 export function hasErrors(diagnostics: readonly Diagnostic[]): boolean {

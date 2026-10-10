@@ -17,7 +17,7 @@ import {
   type ScrapeTarget,
 } from './generators.js';
 import type { ComponentId } from './images.js';
-import type { ComponentSpec, RuntimeBundle, RuntimeNote } from './types.js';
+import type { ComponentSpec, GeneratedAlert, RuntimeBundle, RuntimeNote } from './types.js';
 
 export * from './backends.js';
 export * from './alerts.js';
@@ -30,6 +30,14 @@ export * from './images.js';
 export * from './types.js';
 export * from './receivers.js';
 export * from './integration-signals.js';
+export * from './checks.js';
+
+import {
+  BLACKBOX_ADDRESS,
+  blackboxConfig,
+  probeScrapeConfigs,
+  servicesWithChecks,
+} from './checks.js';
 
 const DAY_MS = 86_400_000;
 
@@ -142,6 +150,16 @@ export function generateRuntime(ws: ResolvedWorkspace): RuntimeBundle {
       requiresApproval: true,
     });
   }
+  if (servicesWithChecks(ws).length > 0) {
+    components.push({
+      id: 'blackbox-exporter',
+      purpose:
+        "Checks applications' addresses from outside, like a user would (it can reach the internet for this)",
+      scrapeJob: 'blackbox-exporter',
+      privileges: [],
+      requiresApproval: false,
+    });
+  }
   components.push({
     id: 'gateway',
     purpose: 'Authenticated entry point: only Raion can reach the other components',
@@ -160,6 +178,9 @@ export function generateRuntime(ws: ResolvedWorkspace): RuntimeBundle {
     { job: 'alertmanager', target: 'alertmanager:9093' },
     ...(ids.has('node-exporter') ? [{ job: 'node-exporter', target: 'node-exporter:9100' }] : []),
     ...(ids.has('cadvisor') ? [{ job: 'cadvisor', target: 'cadvisor:8080' }] : []),
+    ...(ids.has('blackbox-exporter')
+      ? [{ job: 'blackbox-exporter', target: BLACKBOX_ADDRESS }]
+      : []),
   ];
 
   const routes: GatewayRoute[] = [
@@ -199,7 +220,8 @@ export function generateRuntime(ws: ResolvedWorkspace): RuntimeBundle {
   };
   const artifacts = [
     collectorConfig(backends, { serviceGraph, pulled }),
-    ...prometheusConfig(ws, scrapeTargets),
+    ...prometheusConfig(ws, scrapeTargets, probeScrapeConfigs(ws)),
+    ...(ids.has('blackbox-exporter') ? [blackboxConfig(ws)] : []),
     lokiConfig(retention.logs),
     ...(backends.traces ? [tempoConfig(retention.traces)] : []),
     ...grafanaProvisioning(backends),
@@ -241,13 +263,21 @@ export function generateRuntime(ws: ResolvedWorkspace): RuntimeBundle {
       composeName: m.composeName,
     })),
     alerts: rules.groups.flatMap((g) =>
-      g.rules.map((r) => ({
+      g.rules.map((r): GeneratedAlert => ({
         group: g.name,
         alert: r.alert,
         severity: r.labels.severity ?? 'none',
+        scope: (r.labels.raion_scope ?? 'platform') as GeneratedAlert['scope'],
         ...(r.labels.service_name ? { service: r.labels.service_name } : {}),
+        ...(r.labels.slo ? { slo: r.labels.slo } : {}),
         ...(r.for ? { for: r.for } : {}),
         summary: r.annotations.summary ?? '',
+        description: r.annotations.description ?? '',
+        expr: r.expr,
+        title: r.guide?.title ?? r.alert,
+        meaning: r.guide?.meaning ?? r.annotations.description ?? '',
+        condition: r.guide?.condition ?? '',
+        action: r.guide?.action ?? [],
       })),
     ),
     dashboards: dashboards.map(({ uid, title, service }) => ({
