@@ -30,6 +30,8 @@ pnpm raion init observability                      # create a workspace (asks a 
 pnpm raion server --workspace observability        # start the web UI
 ```
 
+`observability` is the folder Raion creates for your workspace; any name works, as long as you use the same one in both commands (`raion init my-monitoring`, then `raion server --workspace my-monitoring`). The workspace's own name is the first question `raion init` asks. See [names in the examples](docs/README.md#names-in-the-examples).
+
 If `corepack enable` fails with `EPERM` on Windows, see [Installing](docs/02-installing.md#install).
 
 The server prints a one-time link: open it to create your administrator account. **Home** then walks you through starting monitoring and adding your applications.
