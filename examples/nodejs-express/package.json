@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@opentelemetry/api": "1.9.1",
-    "@opentelemetry/auto-instrumentations-node": "0.80.0",
+    "@opentelemetry/auto-instrumentations-node": "0.81.0",
     "express": "5.2.1",
     "pino": "10.4.0"
   }
