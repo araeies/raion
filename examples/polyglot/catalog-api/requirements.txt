@@ -4,9 +4,9 @@ waitress==3.0.2
 psycopg[binary]==3.3.6
 requests==2.34.2
 # OpenTelemetry (Raion's Python integration). Versions are tested together.
-opentelemetry-distro==0.66b0
-opentelemetry-exporter-otlp-proto-http==1.45.0
-opentelemetry-instrumentation-flask==0.66b0
-opentelemetry-instrumentation-psycopg==0.66b0
-opentelemetry-instrumentation-requests==0.66b0
-opentelemetry-instrumentation-logging==0.66b0
+opentelemetry-distro==0.66b1
+opentelemetry-exporter-otlp-proto-http==1.45.1
+opentelemetry-instrumentation-flask==0.66b1
+opentelemetry-instrumentation-psycopg==0.66b1
+opentelemetry-instrumentation-requests==0.66b1
+opentelemetry-instrumentation-logging==0.66b1
